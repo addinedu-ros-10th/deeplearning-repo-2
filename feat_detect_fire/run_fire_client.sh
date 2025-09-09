@@ -11,8 +11,7 @@ cd $PROJECT_DIR
 # 가상환경 활성화
 source $PROJECT_DIR/.venv/bin/activate
 
-FIRE_DETECT_CLIENT_SCRIPT="$PROJECT_DIR/feat_detect_fire_smoking/fire-detect-client.py"
+FIRE_DETECT_CLIENT_SCRIPT="$PROJECT_DIR/feat_detect_fire/fire-detect-client.py"
 
 # 파이썬 프로그램 실행 (client)
 python $FIRE_DETECT_CLIENT_SCRIPT
-
