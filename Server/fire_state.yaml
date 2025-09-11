@@ -1,0 +1,32 @@
+# 화재상태 관리 yaml 파일 
+  # (State Machine기반, 상태 변화(transition) 정보 일부 포함)
+
+# 소방 상태 목록 (state)
+state:
+  - name : NORMAL             # 정상
+  - name : WARNING            # 주의 (경고연기 1개이상 감지)
+  - name : ALERT              # 경보 (화재 또는 화재연기 1개이상 감지)
+
+param:
+  - name : fire_count           # 화재 갯수
+    initial_value : 0
+  - name : danger_smoke_count   # 화재로 발전할 가능성 높은 연기 갯수 : 1개이상 감지시 경보 (1개 ~ 무한개)
+    initial_value : 0
+  - name : general_smoke_count  # 화재로 발전할 가능성이 적은 일반 연기 갯수 : 1개이상 감지시 주의 (1개 ~ 무한개)
+    initial_value : 0
+  - name : irrivent_count       # 무관한 객체 갯수
+    initial_value : 0
+
+transitions:
+  # Python이 상황에 맞게 아래 trigger 호출 (상태 변경(transition)은 파이썬 코드에서 다룸)
+  - trigger: 'to_alert'     # 경보 상태로 변경
+    source: ['NORMAL', 'WARNING']
+    dest: 'ALERT'
+
+  - trigger: 'to_warning'   # 주의 상태로 변경
+    source: ['NORMAL', 'ALERT']
+    dest: 'WARNING'
+
+  - trigger: 'to_normal'    # 정상 상태로 복귀
+    source: ['WARNING', 'ALERT']
+    dest: 'NORMAL'
