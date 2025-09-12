@@ -10,7 +10,7 @@ import threading
 TCP_HOST = '0.0.0.0'  # 모든 인터페이스에서 연결 허용
 TCP_PORT = 6600
 
-def handle_tcp_client(shutdown_event: threading.Event):
+def handle_tcp_client(shared_metadata:dict, metadata_lock: threading.Lock, shutdown_event: threading.Event):
     """
     TCP 클라이언트의 연결을 수락하고 메타데이터를 수신
     """
@@ -37,7 +37,9 @@ def handle_tcp_client(shutdown_event: threading.Event):
                     
                     try:
                         metadata = json.loads(data.decode('utf-8'))
-                        print(f"AI Server (TCP) : 수신된 메타데이터: {metadata}")
+                        # Lock을 사용하여 공유 데이터 업데이트
+                        with metadata_lock:
+                            shared_metadata.update(metadata)
                     except (json.JSONDecodeError, UnicodeDecodeError) as e:
                         print(f"AI Server (TCP) : 데이터 파싱 오류: {e}")
 

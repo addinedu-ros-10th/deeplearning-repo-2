@@ -5,6 +5,7 @@ import queue
 from situationDetector.tcp_ped_receiver import handle_tcp_client
 from situationDetector.udp_ped_receiver import receive_video_udp
 from situationDetector.yolo_detector import detect_objects
+from situationDetector.tcp_db_sender import send_data_to_db
 
 def main():
     """
@@ -14,26 +15,41 @@ def main():
     shutdown_event = threading.Event()
 
     # 스레드 간 프레임 공유를 위해 큐 생성
-    frame_queue = queue.Queue(maxsize=10)
+    frame_queue = queue.Queue(maxsize=10) # 프레임 큐
+    db_manager_queue = queue.Queue(maxsize=20) # 분석 결과 큐
 
-    # 1. TCP 수신 스레드 생성
+    # TCP 메타데이터 공유를 위한 딕셔너리 + Lock
+    shared_metadata = {
+        "timestamp" : None,
+        "patrol_car_name" : "Unknown"
+    }
+    metadata_lock = threading.Lock()
+
+    # 1. TCP 메타데이터 수신 스레드 생성
     tcp_thread = threading.Thread(
         target=handle_tcp_client,
-        args=(shutdown_event,),
+        args=(shared_metadata, metadata_lock, shutdown_event,),
         daemon=True
     )
 
-    # 2. UDP 수신 스레드 생성 (인자로 situationDetector 전달)
+    # 2. UDP 수신 스레드 생성 (인자로 frame_queue 전달)
     udp_thread = threading.Thread(
         target=receive_video_udp,
         args=(frame_queue, shutdown_event,),
         daemon=True
     )
 
-    # 2. YOLO 처리 스레드 생성 (인자로 situationDetector 전달)
+    # 3. YOLO 처리 스레드 생성 (인자로 frame_queue, detect_queue 전달)
     yolo_thread = threading.Thread(
         target=detect_objects,
-        args=(frame_queue, shutdown_event,),
+        args=(frame_queue, db_manager_queue, shared_metadata, metadata_lock, shutdown_event,),
+        daemon=True
+    )
+
+    # 4. DB 전송 스레드 생성
+    db_sender_thread = threading.Thread(
+        target=send_data_to_db,
+        args = (db_manager_queue, shutdown_event,),
         daemon=True
     )
 
@@ -41,10 +57,11 @@ def main():
     tcp_thread.start()
     udp_thread.start()
     yolo_thread.start()
+    db_sender_thread.start()
 
     try:
-        # KeyboardInterrupt를 받기 위해 메인 스레드가 대기
-        while tcp_thread.is_alive() and udp_thread.is_alive() and yolo_thread.is_alive():
+        # 모든 스레드가 살아있는 동안 메인 스레드 대기
+        while all(t.is_alive() for t in [tcp_thread, udp_thread, yolo_thread, db_sender_thread]):
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nAI Server Main : 종료 신호를 감지. 모든 스레드 정리")
@@ -55,6 +72,7 @@ def main():
         tcp_thread.join()
         udp_thread.join()
         yolo_thread.join()
+        db_sender_thread.join() # 변경/추가된 부분
         print("AI Server Main : 모든 스레드 종료. 프로그램 종료")
 
 if __name__ == "__main__":
