@@ -4,7 +4,7 @@ import time
 import queue
 from situationDetector.receiver.tcp_dm_receiver import handle_tcp_client
 from situationDetector.receiver.udp_dm_receiver import receive_video_udp
-from situationDetector.detect.feat.feat_detect_fire.yolo_detector import detect_objects
+from situationDetector.detect.feat_detect_fire.yolo_detector import detect_objects
 from situationDetector.sender.tcp_ds_sender import send_data_to_db
 
 """
