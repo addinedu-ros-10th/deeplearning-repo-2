@@ -2,10 +2,18 @@
 import threading
 import time
 import queue
-from situationDetector.tcp_ped_receiver import handle_tcp_client
-from situationDetector.udp_ped_receiver import receive_video_udp
-from situationDetector.yolo_detector import detect_objects
-from situationDetector.tcp_db_sender import send_data_to_db
+from situationDetector.receiver.tcp_dm_receiver import handle_tcp_client
+from situationDetector.receiver.udp_dm_receiver import receive_video_udp
+from situationDetector.detect.feat.feat_detect_fire.yolo_detector import detect_objects
+from situationDetector.sender.tcp_ds_sender import send_data_to_db
+
+"""
+스레드 함수 전달 인자
+
+1. 공유 데이터 (프레임 큐 / 분석 결과 큐)
+2. 스레드 락 (다른 스레드가 처리 완료될 때까지 기다려야 하는 경우 락을 인자로 전달)
+3. 
+"""
 
 def main():
     """

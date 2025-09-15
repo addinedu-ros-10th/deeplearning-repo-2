@@ -8,6 +8,8 @@ import queue
 import threading
 from ultralytics import YOLO
 
+FIRE_MODEL_PATH = "situationDetector/detect/best.pt"
+
 def generateDetectJsonDump(result, time, patrol_car_name):
   """
   DB Server에 보낼 json 데이터 생성
@@ -49,7 +51,7 @@ def detect_objects(frame_queue: queue.Queue,
                     shutdown_event: threading.Event):
   print("AI Server (YOLO) : YOLO 스레드를 시작합니다. 모델을 로드합니다.")
   
-  model = YOLO("situationDetector/best.pt")
+  model = YOLO(FIRE_MODEL_PATH)
   
   # 프로그램이 종료되지 않은 동안
   while not shutdown_event.is_set():
