@@ -16,7 +16,9 @@ UDP_PORT = 6601
 NUM_CHUNKS = 20
 FRAME_TIMEOUT = 2.0  # 2초 이상된 미완성 프레임은 삭제
 
-def receive_video_udp(frame_queue: queue.Queue, shutdown_event: threading.Event):
+def receive_video_udp(analysis_frame_queue: queue.Queue,
+                    send_frame_queue: queue.Queue,
+                    shutdown_event: threading.Event):
     """
     UDP 패킷을 수신하고 영상 프레임을 재조립하여 화면에 표시합니다.
     """
@@ -48,7 +50,8 @@ def receive_video_udp(frame_queue: queue.Queue, shutdown_event: threading.Event)
             if frame_id not in frame_buffer:
                 frame_buffer[frame_id] = {
                     'chunks': [None] * NUM_CHUNKS,
-                    'count': 0
+                    'count': 0,
+                    'timestamp': time.time()
                 }
             
             # 청크 데이터 저장 및 카운트 증가
@@ -68,7 +71,8 @@ def receive_video_udp(frame_queue: queue.Queue, shutdown_event: threading.Event)
                     # cv2.imshow('AI Server - Video Stream', frame)
                     # 큐 처리 부분
                     try:
-                        frame_queue.put(frame, block=False)
+                        analysis_frame_queue.put(frame, block=False)
+                        send_frame_queue.put(frame, block=False)
                     except queue.Full:
                         # 큐가 가득찬 상태이면 (YOLO 처리가 늦어지는 경우)
                         # 현재 프레임 버림
