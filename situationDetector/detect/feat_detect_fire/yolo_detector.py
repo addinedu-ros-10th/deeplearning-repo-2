@@ -8,7 +8,7 @@ import queue
 import threading
 from ultralytics import YOLO
 
-FIRE_MODEL_PATH = "situationDetector/detect/best.pt"
+FIRE_MODEL_PATH = "situationDetector/detect/feat_detect_fire/best.pt"
 
 def generateDetectJsonDump(result, time, patrol_car_name):
   """
@@ -49,7 +49,7 @@ def detect_objects(frame_queue: queue.Queue,
                     shared_metadata: dict, 
                     metadata_lock:threading.Lock,
                     shutdown_event: threading.Event):
-  print("AI Server (YOLO) : YOLO 스레드를 시작합니다. 모델을 로드합니다.")
+  print("situationDetector (YOLO) : YOLO 스레드를 시작합니다. 모델을 로드합니다.")
   
   model = YOLO(FIRE_MODEL_PATH)
   
@@ -74,23 +74,22 @@ def detect_objects(frame_queue: queue.Queue,
           try:
               db_manager_queue.put(json_output, block=False)
           except queue.Full:
-              print("AI Server (YOLO) : DB 큐가 가득 찼습니다. 분석 결과를 버립니다.")
+              print("situationDetector (YOLO) : DB 큐가 가득 찼습니다. 분석 결과를 버립니다.")
       
-      # 시각화 부분 (필요시 주석 해제)
-      annotated_frame = results[0].plot()
-      cv2.imshow("Detector test", annotated_frame)
-      if cv2.waitKey(1) & 0xFF == 27:
-        print("AI Server (YOLO) : 종료 키 입력 감지. 종료 신호를 보냅니다.")
-        shutdown_event.set()
-        break
+      # # 시각화 부분 (필요시 주석 해제)
+      # annotated_frame = results[0].plot()
+      # cv2.imshow("Detector test", annotated_frame)
+      # if cv2.waitKey(1) & 0xFF == 27:
+      #   print("situationDetector (YOLO) : 종료 키 입력 감지. 종료 신호를 보냅니다.")
+      #   shutdown_event.set()
+      #   break
 
     except queue.Empty:
       # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
       continue
     except Exception as e:
-      print(f"AI Server (YOLO) : 처리 중 오류 발생: {e}")
+      print(f"situationDetector (YOLO) : 처리 중 오류 발생: {e}")
       break
   
   cv2.destroyAllWindows()
-  print("AI Server (YOLO) : YOLO 스레드를 종료합니다.")
-
+  print("situationDetector (YOLO) : YOLO 스레드를 종료합니다.")
