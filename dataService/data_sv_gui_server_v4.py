@@ -14,7 +14,7 @@ from typing import Dict, Tuple
 # ------------------------------
 # TCP/UDP 통신을 위한 로컬호스트 및 포트 번호
 TCP_HOST, TCP_PORT = "127.0.0.1", 8800
-UDP_HOST, UDP_PORT = "127.0.0.1", 9901
+UDP_HOST, UDP_PORT = "127.0.0.1", 8801
 # 통신 버퍼 크기
 BUFFER_SIZE = 65536
 # 이미지 데이터 전송 시 청크 크기 (4KB)
@@ -47,6 +47,7 @@ def stream_video_frames(
         frame_count (int): 전송할 프레임의 총 개수.
         delay (float): 각 프레임 전송 사이의 지연 시간(초).
     """
+    print("Video_dest_addr : ", dest_addr)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         for i in range(frame_count):
@@ -81,7 +82,9 @@ def send_image_chunks(
         dest_addr (Tuple[str, int]): 청크를 보낼 목적지 주소 (IP, Port).
         event_id (str): 이미지 이벤트의 고유 ID.
         stream_id (str): 이미지 스트림의 고유 ID.
+
     """
+    print("image_dest_addr : ", dest_addr)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     total_chunks = math.ceil(len(image_bytes) / IMAGE_CHUNK_SIZE)
     
@@ -232,6 +235,7 @@ class DataServiceServer:
             
             resp = {"status": "ok", "message": "Video streaming initiated via UDP", "stream_id": stream_id}
             conn.send(json.dumps(resp).encode('utf-8'))
+            print(f"Sent stream_video response to {addr}: {resp}")
             
             threading.Thread(
                 target=stream_video_frames,
@@ -245,11 +249,33 @@ class DataServiceServer:
             logs = [{"time": "2025-09-16 10:00", "event": f"{patrol_car} started patrol"}]
             resp = {"status": "ok", "logs": logs}
             conn.send(json.dumps(resp).encode('utf-8'))
+            print(f"Sent get_logs response to {addr}: {resp}")
             
+        elif command == "get_image":
+            event_id = request.get("event_id", "unknown_evt")
+            # 가상 이미지 데이터 생성
+            fake_png = b"\x89PNG\r\n\x1a\n" + b"FAKE_IMAGE_DATA" * 1000
+            total_chunks = math.ceil(len(fake_png) / IMAGE_CHUNK_SIZE)
+            stream_id = f"img_{event_id}_{random.randint(1000, 9999)}"
+
+            # 이미지 전송 시작 알림을 먼저 보냄
+            header = {"status": "sending_image", "stream_id": stream_id, "total_chunks": total_chunks}
+            send_udp_response(self.udp_server_sock, header, addr)
+
+            # print(f"Sent get_image response to {addr}: {resp}")
+
+
+            # 별도 스레드에서 이미지 청크 전송 시작
+            threading.Thread(
+                target=send_image_chunks, 
+                args=(fake_png, addr, event_id, stream_id), 
+                daemon=True
+            ).start()
         else:
             # 알 수 없는 요청
             resp = {"status": "error", "message": "Unknown command"}
             conn.send(json.dumps(resp).encode('utf-8'))
+            
 
     def _handle_udp_request(self, data: bytes, addr: Tuple[str, int]):
         """
@@ -268,6 +294,7 @@ class DataServiceServer:
             return
 
         print(f"[UDP] Received request from {addr}: {request}")
+        
         command = request.get("command")
 
         if command == "get_logs":
