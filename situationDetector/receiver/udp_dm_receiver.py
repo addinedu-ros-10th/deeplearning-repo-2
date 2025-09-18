@@ -1,7 +1,7 @@
 # udp_receiver.py
 """
 PED로부터 영상 픽셀데이터를 수신하는 클라이언트
-(PED) -> (AI_Server)
+(PED) -> (situationDetector)
 """
 import cv2
 import socket
@@ -11,8 +11,8 @@ import numpy as np
 import queue
 import time
 
-UDP_HOST = '0.0.0.0'  # 모든 인터페이스에서 데이터 수신
-UDP_PORT = 6601
+UDP_HOST = '192.168.0.181'  # situationDetector IP 주소
+UDP_PORT = 1200             # situationDetector UDP 수신 포트 주소
 NUM_CHUNKS = 20
 FRAME_TIMEOUT = 2.0  # 2초 이상된 미완성 프레임은 삭제
 
@@ -20,13 +20,13 @@ def receive_video_udp(analysis_frame_queue: queue.Queue,
                     send_frame_queue: queue.Queue,
                     shutdown_event: threading.Event):
     """
-    UDP 패킷을 수신하고 영상 프레임을 재조립하여 화면에 표시합니다.
+    UDP 패킷을 수신하고 영상 프레임을 재조립하여 화면에 표시
     """
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_sock.bind((UDP_HOST, UDP_PORT))
     # recvfrom()이 블로킹되지 않도록 타임아웃 설정
     udp_sock.settimeout(1.0)
-    print(f"AI Server (UDP) : {UDP_HOST}:{UDP_PORT}에서 데이터를 기다립니다.")
+    print(f"situationDetector (UDP) : {UDP_HOST}:{UDP_PORT}에서 데이터를 기다립니다.")
 
     frame_buffer = {}  # 프레임 조각들을 저장할 버퍼
     last_processed_frame = 0 # 마지막으로 처리된 프레임 ID
