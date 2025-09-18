@@ -1,4 +1,4 @@
-# udp_sender.py
+# udp_main_sender.py
 import cv2
 import queue
 import socket
@@ -7,11 +7,12 @@ import threading
 import time
 
 # 통신 변수
-UDP_HOST = '192.168.0.182'  # dataService IP주소
+UDP_HOST = 'localhost'  # 로컬테스트 IP주소
+# UDP_HOST = '192.168.0.182'  # dataService IP주소
 UDP_PORT = 2300             # dataService UDP 발신 IP주소
 NUM_CHUNKS = 20             # 1프레임을 20조각으로 분할하여 전송
 
-def send_udp_frame_to_db(send_frame_queue: queue.Queue,
+def send_udp_frame_to_main(send_frame_queue: queue.Queue,
                         tcp_connected_event: threading.Event,
                         shutdown_event: threading.Event):
     """
@@ -32,7 +33,7 @@ def send_udp_frame_to_db(send_frame_queue: queue.Queue,
 
             # 2. TCP 연결 확인
             if not is_connected:
-                print("situationDetector (UDP) : ds TCP 연결 대기중...")
+                print("situationDetector (UDP main sender) : ds TCP 연결 대기중...")
                 continue
             
             # 3. 보낼 프레임이 있는지 확인
@@ -58,17 +59,17 @@ def send_udp_frame_to_db(send_frame_queue: queue.Queue,
                 packet = header + chunk
                 udp_sock.sendto(packet, udp_server_addr)
 
-            print(f"situationDetector (UDP) : Frame {frame_id} 전송 완료 ({total_size} bytes)")
+            print(f"situationDetector (UDP main sender) : Frame {frame_id} 전송 완료 ({total_size} bytes)")
             frame_id += 1
             
             # CPU 사용률을 낮추기 위해 짧은 대기 시간 추가
             time.sleep(0.01)
 
     except Exception as e:
-        print(f"situationDetector (UDP) : 오류 발생: {e}")
+        print(f"situationDetector (UDP main sender) : 오류 발생: {e}")
         shutdown_event.set() # 오류 시 전체 종료
     finally:
-        print("situationDetector (UDP) : 스트리밍 스레드를 종료합니다.")
+        print("situationDetector (UDP main sender) : 스트리밍 스레드를 종료합니다.")
         if cap:
             cap.release()
         if udp_sock:
