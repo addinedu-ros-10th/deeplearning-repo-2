@@ -3,7 +3,7 @@ import socket
 
 # tcp_ds_sender.py에 정의된 HOST와 PORT와 동일하게 설정합니다.
 TCP_HOST = 'localhost'
-TCP_PORT = 6602
+TCP_PORT = 1201
 
 def run_test_server():
     """
