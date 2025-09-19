@@ -1,13 +1,14 @@
-# tcp_db_sender.py
+# tcp_main_sender.py
 import socket
 import time
 import queue
 import threading
 
-TCP_HOST = '192.168.0.182'  # dataService IP 주소 
+TCP_HOST = 'localhost'  # 로컬테스트 IP주소
+# TCP_HOST = '192.168.0.182'  # dataService IP 주소 
 TCP_PORT = 2301             # dataService TCP 발신 포트 주소
 
-def send_tcp_data_to_db(db_manager_queue: queue.Queue, 
+def send_tcp_data_to_main(db_manager_queue: queue.Queue, 
                         tcp_connected_event : threading.Event,
                         shutdown_event: threading.Event):
     """
