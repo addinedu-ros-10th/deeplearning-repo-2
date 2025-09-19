@@ -5,7 +5,7 @@ import json
 # --------------------------
 # TCP 수신 (XML/JSON 데이터)
 # --------------------------
-def start_tcp_receiver(host="127.0.0.1", port=6602):
+def start_tcp_receiver(host="127.0.0.1", port=2301):
     tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_server.bind((host, port))
     tcp_server.listen(1)
@@ -20,7 +20,7 @@ def start_tcp_receiver(host="127.0.0.1", port=6602):
             break
         try:
             # JSON 디코딩 시도
-            message = json.loads(data.decode())
+            message = json.loads(data.decode('utf-8'))
             print("\n[TCP] === Received JSON Message ===")
             print("Raw:", data.decode())
             print("Type:", type(message))
@@ -44,13 +44,13 @@ def start_tcp_receiver(host="127.0.0.1", port=6602):
 # --------------------------
 # UDP 수신 (Image/Video 데이터)
 # --------------------------
-def start_udp_receiver(host="127.0.0.1", port=9001):
+def start_udp_receiver(host="127.0.0.1", port=2300):
     udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_server.bind((host, port))
     print(f"[UDP] dataService listening on {host}:{port}")
 
     while True:
-        data, addr = udp_server.recvfrom(4096)
+        data, addr = udp_server.recvfrom(65536)
         print(f"[UDP] Received {len(data)} bytes from {addr}")
         print("Sample Data (first 50 bytes):", data[:50], "\n")
 
