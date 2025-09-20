@@ -11,17 +11,20 @@ class Tcp_client_manager():
         self.PATROL_NUMBER = 1
         self.deviceManager_ID = 0x01
         self.situationDetector_ID = 0x02
-        self.output = ""
+        self.recv_data = ""
+        self.alarm = 0
 
     def socket_init(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         connected = False
         while (not connected):
             try:
+                print("Socket Waiting for Connection from situationDetector ")
                 self.client_socket.connect((self.TCP_HOST, self.TCP_PORT))
                 connected = True
+                print("situationDetector Connected")
             except Exception as e:
-                print(f"Error Occured : {e}")
+                print(f"Socket Initiate Error Occured : {e}")
                 time.sleep(5)
 
     def send_data(self, data):
@@ -35,14 +38,41 @@ class Tcp_client_manager():
             self.client_socket.send(send_data)
 
     def receive_data(self):
-        data_size = 5
-        print("Waiting for data")
-        self.output = self.client_socket.recv(data_size)
-        
+        data_size = 4
+        while True:
+            try:
+                print("Waiting for data")
+                self.client_socket.settimeout(2.0)
+                self.recv_data = self.client_socket.recv(data_size)
+                self.data_validation()
+                time.sleep(0.1)
+            except Exception:
+                pass    
+            except KeyboardInterrupt:
+                print("Keyboard Interruption")
+                break
+    
+    def data_validation(self):
+        if (self.recv_data[0] != self.situationDetector_ID):
+            print("Wrong Data Source Input")
+            self.recv_data = ""
+            return
+        if (self.recv_data[1] != self.deviceManager_ID):
+            print("Wrong Data Destination Input")
+            self.recv_data = ""
+            return
+        if (self.recv_data[2] != self.PATROL_NUMBER):
+            print("Wrong Patrol Number")
+            self.recv_data = ""
+            return
+        self.alarm = int(self.recv_data[3])
+
+
     def socket_close(self):
         self.client_socket.close()
 
     def __exit__(self):
+        print("tcp close")
         self.socket_close()
 
 
