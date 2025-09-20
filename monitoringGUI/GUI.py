@@ -573,8 +573,6 @@ class PatrolDashboard(QMainWindow):
             btn.clicked.connect(lambda checked, n=name: self.trigger_event(n))
 
     def update_frame(self):
-
-            
         ret, frame = self.cap.read()
         if not ret:
             frame = np.zeros((720, 1280, 3), dtype=np.uint8)
