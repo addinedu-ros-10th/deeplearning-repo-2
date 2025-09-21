@@ -137,10 +137,24 @@ def send_image_chunks(
         stream_id (str): 이미지 스트림의 고유 ID.
 
     """
-    print("image_dest_addr : ", dest_addr)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    total_chunks = math.ceil(len(image_bytes) / IMAGE_CHUNK_SIZE)
     
+    # UDP 전용 sock 
+    # sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    # TCP 전용 sock
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    total_chunks = math.ceil(len(image_bytes) / IMAGE_CHUNK_SIZE)
+
+    dest_addr = ("127.0.0.1",8801)
+
+    for _ in range(5):
+        try:
+            sock.connect(dest_addr)
+            break
+        except ConnectionRefusedError:
+            print("서버 준비 안됨, 1초 후 재시도")
+            time.sleep(1)
+
     try:
         for i in range(total_chunks):
             start_index = i * IMAGE_CHUNK_SIZE
@@ -155,14 +169,34 @@ def send_image_chunks(
                 "total": total_chunks,
                 "data": b64_chunk
             }
-            send_udp_response(sock, payload, dest_addr)
-            print(f"[UDP-IMG] Sent chunk {i+1}/{total_chunks} to {dest_addr}")
+            
+            # JSON 데이터를 문자열로 변환하고, 끝을 구분하기 위한 구분자를 추가
+            # 이 예제에서는 '\n'를 구분자로 사용. 수신부도 동일하게 처리해야 함.
+            json_payload = json.dumps(payload).encode('utf-8') + b'\n'
+            
+            # TCP는 전송 보장을 하므로 UDP와 달리 재전송 로직이 필요 없음
+            sock.sendall(json_payload)
+            print(f"[TCP-IMG] Sent chunk {i+1}/{total_chunks} to {dest_addr}")
+
+            # UDP 경우
+            # send_udp_response(sock, payload, dest_addr)
+            # print(f"[UDP-IMG] Sent chunk {i+1}/{total_chunks} to {dest_addr}")
+
             time.sleep(0.01) # 짧은 지연시간
             
+        
+        # TCP 경우  > 이미지 전송 완료 알림
+        end_message = {"type": "image_end", "stream_id": stream_id}
+        sock.sendall(json.dumps(end_message).encode('utf-8') + b'\n')
+        print(f"[TCP-IMG] Sent image_end for stream {stream_id}")
+    
+        
         # 이미지 전송 완료 알림 전송
         end_message = {"type": "image_end", "stream_id": stream_id}
         send_udp_response(sock, end_message, dest_addr)
         print(f"[UDP-IMG] Sent image_end for stream {stream_id}")
+
+
     finally:
         sock.close()
 
@@ -206,8 +240,8 @@ class DataServiceServer:
         self.tcp_server_sock.bind((TCP_HOST, TCP_PORT))
 
         self.tcp_server_sock.listen(5)
-        print(f"TCP 서버가 {TCP_HOST}:{TCP_PORT}에서 대기 중입니다...")
-        # print(f"[TCP] Listening on {TCP_HOST}:{TCP_PORT}")
+        # print(f"TCP 서버가 {TCP_HOST}:{TCP_PORT}에서 대기 중입니다...")
+        print(f"[TCP] Listening on {TCP_HOST}:{TCP_PORT}")
 
         while True:
             try:
@@ -256,7 +290,6 @@ class DataServiceServer:
         print(f"[TCP] Handling client {addr}")
 
         conn.settimeout(10)
-
         try:
             while True:
                 data = conn.recv(4096)
@@ -308,9 +341,42 @@ class DataServiceServer:
             stream_id = f"tcpstream_{video_name}_{random.randint(1000, 9999)}"
 
             # 응답 전송
-            resp = {"status": "ok", "message": "Video streaming initiated via TCP", "stream_id": stream_id}
-            conn.send(json.dumps(resp).encode('utf-8'))
-            print(f"Sent stream_video response to {addr}: {resp}")
+            # resp = {"status": "ok", "message": "Video streaming initiated via TCP", "stream_id": stream_id}
+
+           
+            Result_json = {
+                "data_list": 
+            [                                            # 데이터 리스트
+                    {
+                    "timestamp": "2025-09-18 14:00:00",  # 순찰 이벤트 발생 시각
+                    "class_id": 1,                       # 순찰 이벤트 id
+                    "class_name": "fire",                # 순찰 이벤트 이름
+                    "confidence": 0.6,                   # Detection 신뢰도
+                    "bbox": {                            # Box 표기 위치
+                        "x1": 1.1,
+                        "y1": 1.2,
+                        "x2": 1.3,
+                        "y2": 1.4
+                    }
+                },
+                {
+                    "timestamp": "2025-09-18 14:01:00",
+                    "class_id": 3,
+                    "class_name": "smoke",
+                    "confidence": 0.5,
+                    "bbox": {
+                        "x1": 1.1,
+                        "y1": 1.2,
+                        "x2": 1.3,
+                        "y2": 1.4
+                    }
+                }
+            ],
+            "data_count": 2  # 검색 데이터 수
+        }
+
+            conn.send(json.dumps(Result_json).encode('utf-8'))
+            print(f"Sent stream_video response to {addr}: {Result_json}")
 
             # TCP 스트리밍 스레드 시작
             threading.Thread(
@@ -336,10 +402,15 @@ class DataServiceServer:
 
             # 이미지 전송 시작 알림을 먼저 보냄
             header = {"status": "sending_image", "stream_id": stream_id, "total_chunks": total_chunks}
-            send_udp_response(self.udp_server_sock, header, addr)
+            # resp = {"status": "ok", "logs": logs}
+            resp = {"status": "ok", "header": header}
 
-            # print(f"Sent get_image response to {addr}: {resp}")
-            print(f"Sent get_image response to {addr}")
+            # send_udp_response(self.udp_server_sock, header, addr)
+            conn.send(json.dumps(resp).encode('utf-8'))
+
+            print(f"Sent get_image response to {addr}: {resp}")
+
+            # print(f"Sent get_image response to {addr}")
 
 
             # 별도 스레드에서 이미지 청크 전송 시작
@@ -406,7 +477,7 @@ class DataServiceServer:
             
             # 별도 스레드에서 비디오 프레임 전송 시작
             threading.Thread(
-                target=stream_video_frames, 
+                target=stream_video_frames_UDP, 
                 args=(event_id, addr, stream_id, 10, 0.5), 
                 daemon=True
             ).start()
