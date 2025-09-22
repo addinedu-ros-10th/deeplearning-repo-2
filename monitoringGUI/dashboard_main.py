@@ -1,3 +1,7 @@
+
+from log_viewer import LogViewerDialog
+
+import time
 import sys
 import cv2
 import os
@@ -127,195 +131,109 @@ class AlertDialog(QDialog):
             self.parent_dashboard.resolve_alert(self, self.event_type)
             self.accept()
 
-class LogViewerDialog(QDialog):
-    def __init__(self, parent=None, log_entries=None, event_colors=None):
+
+
+class TcpReceiver(QThread):
+    """
+    백그라운드에서 TCP 소켓 통신을 통해 JSON 데이터를 수신하는 스레드 클래스.
+    데이터를 수신하면 'data_received' 시그널을 발생시켜 메인 스레드로 전달합니다.
+    """
+    data_received = Signal(dict)  # 수신된 데이터를 담아 보낼 시그널 (dict 타입)
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("로그 뷰어 및 동영상 재생")
-        self.setMinimumSize(1200, 800)
-        self.all_log_entries = log_entries or []
-        self.filtered_log_entries = []
-        self.event_colors = event_colors or {}
-        self.event_type_map = {"화재": "0", "폭행": "1", "누워있는 사람": "2", "실종자": "3", "무단 투기": "4", "흡연자": "5"}
-        self.recording_files = sorted([f for f in os.listdir("recordings") if f.endswith('.mp4')], reverse=True)
-        self.video_capture = None
-        self.playing_video = False
-        self.current_page = 1
-        self.items_per_page = 20
-        self.setupUi()
-        self.connect_signals()
-        self.request_logs_from_server()
+        self.running = True
+        self.host = 'localhost'  # 수신할 호스트 주소
+        self.port = 2401          # 수신할 포트 번호
 
-    def setupUi(self):
-        main_layout = QHBoxLayout(self)
-        video_panel = QWidget()
-        video_layout = QVBoxLayout(video_panel)
-        self.video_display = QLabel("재생할 동영상을 선택하세요.")
-        self.video_display.setFixedSize(640, 480)
-        self.video_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_display.setStyleSheet("background-color: rgb(40, 40, 40); color: white;")
-        self.video_display.setScaledContents(True)
-        video_layout.addWidget(self.video_display)
-        video_layout.addStretch()
-        main_layout.addWidget(video_panel)
-        control_panel = QWidget()
-        control_layout = QVBoxLayout(control_panel)
-        search_groupbox = QGroupBox("검색 조건")
-        search_layout = QGridLayout(search_groupbox)
-        self.start_date_edit = QDateEdit(calendarPopup=True)
-        self.start_date_edit.setDate(QDate.currentDate().addDays(-7))
-        self.end_date_edit = QDateEdit(calendarPopup=True)
-        self.end_date_edit.setDate(QDate.currentDate())
-        self.orderby_combo = QComboBox()
-        self.orderby_combo.addItems(["최신순", "오래된 순"])
-        search_layout.addWidget(QLabel("시작일:"), 0, 0)
-        search_layout.addWidget(self.start_date_edit, 0, 1)
-        search_layout.addWidget(QLabel("종료일:"), 1, 0)
-        search_layout.addWidget(self.end_date_edit, 1, 1)
-        search_layout.addWidget(QLabel("정렬:"), 2, 0)
-        search_layout.addWidget(self.orderby_combo, 2, 1)
-        event_groupbox = QGroupBox("이벤트 종류")
-        self.event_checkboxes = {}
-        event_layout = QGridLayout(event_groupbox)
-        event_names = list(self.event_type_map.keys())
-        for i, name in enumerate(event_names):
-            checkbox = QCheckBox(name)
-            checkbox.setChecked(True)
-            self.event_checkboxes[name] = checkbox
-            event_layout.addWidget(checkbox, i // 2, i % 2)
-        search_layout.addWidget(event_groupbox, 3, 0, 1, 2)
-        self.search_button = QPushButton("로그 검색")
-        search_layout.addWidget(self.search_button, 4, 0, 1, 2)
-        control_layout.addWidget(search_groupbox)
-        self.log_table = QTableWidget()
-        self.log_table.setColumnCount(3)
-        self.log_table.setHorizontalHeaderLabels(["발생 시각", "이벤트 종류", "영상 재생"])
-        self.log_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.log_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.log_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.log_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.log_table.setSortingEnabled(True)
-        control_layout.addWidget(self.log_table)
-        pagination_layout = QHBoxLayout()
-        self.prev_button = QPushButton("이전")
-        self.page_label = QLabel("1 / 1")
-        self.next_button = QPushButton("다음")
-        pagination_layout.addStretch()
-        pagination_layout.addWidget(self.prev_button)
-        pagination_layout.addWidget(self.page_label)
-        pagination_layout.addWidget(self.next_button)
-        pagination_layout.addStretch()
-        control_layout.addLayout(pagination_layout)
-        main_layout.addWidget(control_panel, 1)
+    def run(self):
+        """스레드가 시작될 때 실행되는 메인 루프"""
+        try:
+            # 서버 소켓 생성 및 설정
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # 주소 재사용 옵션 설정
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((self.host, self.port))
+            server_socket.listen(1)
+            # 타임아웃을 설정하여 self.running 플래그를 주기적으로 확인할 수 있게 함
+            server_socket.settimeout(1.0)
+            print(f"TCP Receiver listening on {self.host}:{self.port}")
 
-    def connect_signals(self):
-        self.video_timer = QTimer(self)
-        self.video_timer.timeout.connect(self.update_video_frame)
-        self.search_button.clicked.connect(self.request_logs_from_server)
-        self.prev_button.clicked.connect(self.go_to_prev_page)
-        self.next_button.clicked.connect(self.go_to_next_page)
+            while self.running:
+                try:
+                    # 클라이언트 연결 대기
+                    client_socket, addr = server_socket.accept()
+                    with client_socket:
+                        print(f"Accepted connection from {addr}")
+                        full_data = b""
+                        while True:
+                            # 1024 바이트씩 데이터 수신
+                            data = client_socket.recv(1024)
+                            if not data:
+                                break
+                            full_data += data
+                        
+                        # 수신된 데이터가 있으면 처리
+                        if full_data:
+                            try:
+                                # 수신된 바이트 데이터를 UTF-8 문자열로 디코딩
+                                json_str = full_data.decode('utf-8')
+                                # JSON 문자열을 파이썬 딕셔너리로 변환
+                                json_data = json.loads(json_str)
+                                # 파싱된 데이터를 시그널에 담아 발생시킴
+                                self.data_received.emit(json_data)
+                            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                                print(f"Error processing received data: {e}")
 
-    def request_logs_from_server(self):
-        # This is a simulation. In a real app, this would query a database or a server.
-        start_date = self.start_date_edit.date().toString("yyyyMMdd")
-        end_date = self.end_date_edit.date().toString("yyyyMMdd")
-        orderby = self.orderby_combo.currentText() == "최신순"
-        detection_types = [self.event_type_map[name] for name, cb in self.event_checkboxes.items() if cb.isChecked()]
-        start_dt = self.start_date_edit.dateTime().toPython().date()
-        end_dt = self.end_date_edit.dateTime().toPython().date()
-        self.filtered_log_entries = []
-        for entry in self.all_log_entries:
-            try:
-                log_dt = datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").date()
-                if not (start_dt <= log_dt <= end_dt): continue
-                is_target_event = any(name in entry['message'] for name, code in self.event_type_map.items() if code in detection_types)
-                if is_target_event: self.filtered_log_entries.append(entry)
-            except ValueError: continue
-        self.filtered_log_entries.sort(key=lambda x: x['timestamp'], reverse=orderby)
-        self.current_page = 1
-        self.update_table_display()
+                except socket.timeout:
+                    # 타임아웃 발생 시 루프를 계속 진행하여 self.running 상태를 확인
+                    continue
+                except Exception as e:
+                    print(f"TCP receiver error: {e}")
+        
+        finally:
+            # 스레드 종료 시 서버 소켓 정리
+            server_socket.close()
+            print("TCP Receiver stopped.")
 
-    def update_table_display(self):
-        self.log_table.setSortingEnabled(False)
-        self.log_table.setRowCount(0)
-        start_index = (self.current_page - 1) * self.items_per_page
-        end_index = start_index + self.items_per_page
-        for row, entry in enumerate(self.filtered_log_entries[start_index:end_index]):
-            self.log_table.insertRow(row)
-            message = entry['message']
-            event_type = "정보"
-            match = re.search(r"\]\s*([\w\s]+?)\s*(감지됨|확인됨|상황 종료됨)", message)
-            if match: event_type = match.group(1).strip()
-            self.log_table.setItem(row, 0, QTableWidgetItem(entry['timestamp']))
-            self.log_table.setItem(row, 1, QTableWidgetItem(event_type))
-            play_button = QPushButton("재생")
-            play_button.clicked.connect(lambda chk, ts=entry['timestamp']: self.play_video_for_log(ts))
-            self.log_table.setCellWidget(row, 2, play_button)
-        self.log_table.setSortingEnabled(True)
-        self.update_pagination_controls()
+    def stop(self):
+        """스레드를 안전하게 종료하기 위한 메서드"""
+        self.running = False
+        print("Stopping TCP receiver thread...")
 
-    def update_pagination_controls(self):
-        total_pages = max(1, (len(self.filtered_log_entries) + self.items_per_page - 1) // self.items_per_page)
-        self.page_label.setText(f"{self.current_page} / {total_pages}")
-        self.prev_button.setEnabled(self.current_page > 1)
-        self.next_button.setEnabled(self.current_page < total_pages)
+class VideoThread(QThread):
+    # 프레임을 전달하기 위한 시그널 정의
+    change_pixmap_signal = Signal(np.ndarray)
 
-    def go_to_prev_page(self):
-        if self.current_page > 1:
-            self.current_page -= 1
-            self.update_table_display()
+    def __init__(self, video_source, parent=None):
+        super().__init__(parent)
+        self._run_flag = True
+        self.video_source = video_source
 
-    def go_to_next_page(self):
-        total_pages = max(1, (len(self.filtered_log_entries) + self.items_per_page - 1) // self.items_per_page)
-        if self.current_page < total_pages:
-            self.current_page += 1
-            self.update_table_display()
-
-    def play_video_for_log(self, timestamp_str):
-        log_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-        best_match = None
-        min_diff = timedelta.max
-        for filename in self.recording_files:
-            try:
-                file_time_str = filename.replace('chunk_', '').replace('.mp4', '')
-                file_time = datetime.strptime(file_time_str, "%Y-%m-%d_%H-%M-%S")
-                if log_time >= file_time:
-                    diff = log_time - file_time
-                    if diff < min_diff:
-                        min_diff = diff
-                        best_match = filename
-            except ValueError: continue
-        if best_match: self.play_video(os.path.join("recordings", best_match))
-        else: self.video_display.setText("해당 시간에 녹화된 영상이 없습니다.")
-
-    def play_video(self, path):
-        if self.playing_video:
-            self.video_timer.stop()
-            if self.video_capture: self.video_capture.release()
-        self.video_capture = cv2.VideoCapture(path)
-        if self.video_capture.isOpened():
-            fps = self.video_capture.get(cv2.CAP_PROP_FPS) or 30
-            self.playing_video = True
-            self.video_timer.start(int(1000 / fps))
-        else: self.playing_video = False
-
-    def update_video_frame(self):
-        if self.playing_video and self.video_capture:
-            ret, frame = self.video_capture.read()
+    def run(self):
+        # 스레드가 시작되면 이 루프가 실행됨
+        cap = cv2.VideoCapture(self.video_source)
+        while self._run_flag:
+            ret, frame = cap.read()
             if ret:
-                rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = rgb_image.shape
-                qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format_RGB888)
-                self.video_display.setPixmap(QPixmap.fromImage(qt_image))
+                # 프레임을 성공적으로 읽으면 시그널을 통해 메인 스레드로 전송
+                self.change_pixmap_signal.emit(frame)
             else:
-                self.video_timer.stop()
-                if self.video_capture: self.video_capture.release()
-                self.playing_video = False
-    
-    def closeEvent(self, event):
-        self.video_timer.stop()
-        if self.video_capture: self.video_capture.release()
-        super().closeEvent(event)
+                # 프레임 읽기 실패 (연결 끊김 등)
+                print(f"스트림 연결 끊김. 5초 후 재연결 시도...")
+                cap.release() # 자원 해제
+                time.sleep(5) # 5초 대기
+                cap = cv2.VideoCapture(self.video_source) # 재연결 시도
+        
+        # 루프 종료 시 자원 해제
+        cap.release()
+        print("VideoThread 종료.")
+
+    def stop(self):
+        """스레드를 안전하게 종료"""
+        self._run_flag = False
+        self.wait() # 스레드가 완전히 종료될 때까지 대기
+
 
 # --- 메인 대시보드 클래스 ---
 class PatrolDashboard(QMainWindow):
@@ -334,21 +252,34 @@ class PatrolDashboard(QMainWindow):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+
+
         self.frame_buffer = deque(maxlen=16)
         self.frame_counter = 0
         self.recorder = RollingRecorder()
 
-        # --- 로컬 웹캠으로 직접 연결 ---
-        self.camera_index = 0  # 사용할 카메라 번호 (0:기본, 1:두번째)
-        self.cap = cv2.VideoCapture(self.camera_index)
 
-        if not self.cap.isOpened():
-            QMessageBox.critical(self, "카메라 오류", f"{self.camera_index}번 카메라를 열 수 없습니다.")
-            sys.exit()
+        # # --- 로컬 웹캠으로 직접 연결 ---
+        # self.camera_index = 0  # 사용할 카메라 번호 (0:기본, 1:두번째)
+        # self.cap = cv2.VideoCapture(self.camera_index)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_frame)
-        self.timer.start(1000 // 30)
+        # if not self.cap.isOpened():
+        #     QMessageBox.critical(self, "카메라 오류", f"{self.camera_index}번 카메라를 열 수 없습니다.")
+        #     sys.exit()
+
+        # self.timer = QTimer(self)
+        # self.timer.timeout.connect(self.update_frame)
+        # self.timer.start(1000 // 30)
+        # # --- 로컬 웹캠으로 직접 연결 ---
+
+        # --- 새로운 VideoThread 설정 ---
+        self.video_source = "http://192.168.0.180:5000/stream?src=0"
+
+        self.thread = VideoThread(self.video_source) # 비디오 스레드 생성
+        self.thread.change_pixmap_signal.connect(self.update_image) # 시그널과 슬롯 연결
+        self.thread.start() # 스레드 시작
+        # --- 새로운 VideoThread 설정 ---
+
 
         self.event_colors = {"화재":"red", "폭행":"orange", "누워있는 사람":"purple", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
         if os.path.exists("alert.wav"):
@@ -397,19 +328,46 @@ class PatrolDashboard(QMainWindow):
         for name, btn in self.trigger_buttons.items():
             btn.clicked.connect(lambda checked, n=name: self.trigger_event(n))
 
-    def update_frame(self):
-        ret, frame = self.cap.read()
-        if not ret:
+    # def update_frame(self):
+    #     ret, frame = self.cap.read()
+    #     if not ret:
+    #         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    #         cv2.putText(frame, "NO SIGNAL", (450, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
+    #     else:
+    #         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    #         cv2.putText(frame, now_str, (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    #         cv2.circle(frame, (30, 30), 10, (0, 0, 255), -1)
+    #         cv2.putText(frame, "REC", (50, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    #         self.recorder.write_frame(frame)
+    #         self.frame_buffer.append(self.preprocess_frame(frame))
+    #         self.frame_counter += 1
+    #     rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #     h, w, ch = rgb_image.shape
+    #     qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format_RGB888)
+    #     pixmap = QPixmap.fromImage(qt_image)
+    #     self.video_widget.video_label.setPixmap(pixmap)
+
+
+    # update_frame 메서드를 update_image로 변경하거나 새로 만듦
+    def update_image(self, frame):
+        """VideoThread로부터 받은 프레임을 화면에 업데이트하는 슬롯"""
+        # 이 메서드는 더 이상 self.cap.read()를 호출하지 않음
+        
+        # 프레임이 유효한지 확인
+        if frame is None:
             frame = np.zeros((720, 1280, 3), dtype=np.uint8)
             cv2.putText(frame, "NO SIGNAL", (450, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         else:
+            # 기존 update_frame에 있던 로직을 여기에 적용
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
             cv2.putText(frame, now_str, (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.circle(frame, (30, 30), 10, (0, 0, 255), -1)
             cv2.putText(frame, "REC", (50, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            
             self.recorder.write_frame(frame)
             self.frame_buffer.append(self.preprocess_frame(frame))
             self.frame_counter += 1
+            
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format_RGB888)
@@ -502,9 +460,19 @@ class PatrolDashboard(QMainWindow):
             self.log_viewer_dialog.all_log_entries = self.log_entries
             self.log_viewer_dialog.request_logs_from_server()
 
+    # def closeEvent(self, event):
+    #     print("Closing application...")
+    #     self.timer.stop()
+    #     for w in QApplication.topLevelWidgets():
+    #         if isinstance(w, QDialog):
+    #             w.close()
+
+    # closeEvent 수정
     def closeEvent(self, event):
         print("Closing application...")
-        self.timer.stop()
+        # self.timer.stop() # 기존 타이머는 없으므로 삭제 또는 주석 처리
+        self.thread.stop() # 비디오 스레드를 안전하게 종료
+        
         for w in QApplication.topLevelWidgets():
             if isinstance(w, QDialog):
                 w.close()
@@ -530,5 +498,6 @@ class PatrolDashboard(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = PatrolDashboard()
-    window.show()
+    # window.show() # 보통 크기
+    window.showMaximized()  # 이 줄을 추가하거나, 주석을 해제해주세요.
     sys.exit(app.exec())

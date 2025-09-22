@@ -4,11 +4,12 @@ import os
 import re
 from datetime import datetime, timedelta
 
+# PySide6 관련 모든 import 구문을 이 파일에도 추가해야 합니다.
 from PySide6.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-                               QDialog, QGridLayout, QPushButton, QComboBox,
+                               QDialog, QGridLayout, QPushButton, QComboBox, QGroupBox,
                                QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
                                QAbstractItemView, QCheckBox)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QDate
 from PySide6.QtGui import QImage, QPixmap
 
 # cv2는 영상 재생에만 필요하므로 이 파일에서도 import합니다.
@@ -41,21 +42,21 @@ class LogViewerDialog(QDialog):
         self.connect_signals()
         self.request_logs_from_server()
 
+    # setupUi, connect_signals 및 LogViewerDialog의 모든 메서드는
+    # 기존 코드와 동일하게 이 클래스 내부에 그대로 둡니다.
+    # ... (기존에 작성하신 LogViewerDialog의 모든 메서드를 여기에 붙여넣기) ...
     def setupUi(self):
         main_layout = QHBoxLayout(self)
         video_panel = QWidget()
         video_layout = QVBoxLayout(video_panel)
-        
         self.video_display = QLabel("재생할 동영상을 선택하세요.")
         self.video_display.setFixedSize(640, 480)
         self.video_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_display.setStyleSheet("background-color: rgb(40, 40, 40); color: white;")
         self.video_display.setScaledContents(True)
-        
         video_layout.addWidget(self.video_display)
         video_layout.addStretch()
         main_layout.addWidget(video_panel)
-
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
         search_groupbox = QGroupBox("검색 조건")
@@ -66,14 +67,12 @@ class LogViewerDialog(QDialog):
         self.end_date_edit.setDate(QDate.currentDate())
         self.orderby_combo = QComboBox()
         self.orderby_combo.addItems(["최신순", "오래된 순"])
-        
         search_layout.addWidget(QLabel("시작일:"), 0, 0)
         search_layout.addWidget(self.start_date_edit, 0, 1)
         search_layout.addWidget(QLabel("종료일:"), 1, 0)
         search_layout.addWidget(self.end_date_edit, 1, 1)
         search_layout.addWidget(QLabel("정렬:"), 2, 0)
         search_layout.addWidget(self.orderby_combo, 2, 1)
-        
         event_groupbox = QGroupBox("이벤트 종류")
         self.event_checkboxes = {}
         event_layout = QGridLayout(event_groupbox)
@@ -83,12 +82,10 @@ class LogViewerDialog(QDialog):
             checkbox.setChecked(True)
             self.event_checkboxes[name] = checkbox
             event_layout.addWidget(checkbox, i // 2, i % 2)
-            
         search_layout.addWidget(event_groupbox, 3, 0, 1, 2)
         self.search_button = QPushButton("로그 검색")
         search_layout.addWidget(self.search_button, 4, 0, 1, 2)
         control_layout.addWidget(search_groupbox)
-
         self.log_table = QTableWidget()
         self.log_table.setColumnCount(3)
         self.log_table.setHorizontalHeaderLabels(["발생 시각", "이벤트 종류", "영상 재생"])
@@ -99,7 +96,6 @@ class LogViewerDialog(QDialog):
         self.log_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.log_table.setSortingEnabled(True)
         control_layout.addWidget(self.log_table)
-
         pagination_layout = QHBoxLayout()
         self.prev_button = QPushButton("이전")
         self.page_label = QLabel("1 / 1")
@@ -120,12 +116,10 @@ class LogViewerDialog(QDialog):
         self.next_button.clicked.connect(self.go_to_next_page)
 
     def request_logs_from_server(self):
-        # ... (이하 LogViewerDialog의 모든 메서드는 기존 코드와 동일하게 복사) ...
         start_date = self.start_date_edit.date().toString("yyyyMMdd")
         end_date = self.end_date_edit.date().toString("yyyyMMdd")
         orderby = self.orderby_combo.currentText() == "최신순"
         detection_types = [self.event_type_map[name] for name, cb in self.event_checkboxes.items() if cb.isChecked()]
-
         start_dt = self.start_date_edit.dateTime().toPython().date()
         end_dt = self.end_date_edit.dateTime().toPython().date()
         self.filtered_log_entries = []
