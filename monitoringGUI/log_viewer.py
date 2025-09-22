@@ -1,112 +1,104 @@
 # log_viewer.py
 
+import sys
 import os
 import re
+import cv2
 from datetime import datetime, timedelta
 
-# PySide6 관련 모든 import 구문을 이 파일에도 추가해야 합니다.
-from PySide6.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-                               QDialog, QGridLayout, QPushButton, QComboBox, QGroupBox,
-                               QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
-                               QAbstractItemView, QCheckBox)
-from PySide6.QtCore import Qt, QTimer, QDate
+from PySide6.QtWidgets import (QApplication, QDialog, QWidget, QLabel, QPushButton, QTableWidget,
+                               QTableWidgetItem, QCheckBox, QDateEdit, QComboBox,
+                               QHeaderView, QAbstractItemView, QMessageBox)
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtCore import QFile, QIODevice, QTimer, QDate
 from PySide6.QtGui import QImage, QPixmap
 
-# cv2는 영상 재생에만 필요하므로 이 파일에서도 import합니다.
-import cv2
 
+
+
+# --- 테스트를 위한 실행 코드 ---   python3  log_viewer.py 시에 테스트용 로그 데이터를 확인할 수 있음
+def run_test():
+    """테스트를 위한 LogViewerDialog 실행 함수"""
+    app = QApplication(sys.argv)
+    
+    # 테스트용 로그 데이터
+    test_logs = [
+        {'timestamp': '2025-09-21 14:10:30', 'message': '[자동] 화재 감지됨 (확률: 0.95)'},
+        {'timestamp': '2025-09-22 11:05:00', 'message': '[수동] 폭행 감지됨 (확률: 1.00)'}
+    ]
+    
+    # LogViewerDialog 인스턴스 생성 및 실행
+    dialog = LogViewerDialog(log_entries=test_logs)
+    dialog.show()
+    
+    sys.exit(app.exec())
+
+
+# --- 로그 뷰어 다이얼로그 클래스 ---
 class LogViewerDialog(QDialog):
     def __init__(self, parent=None, log_entries=None, event_colors=None):
         super().__init__(parent)
-        self.setWindowTitle("로그 뷰어 및 동영상 재생")
-        self.setMinimumSize(1200, 800)
+        
+        # UI 파일 로드 및 위젯 초기화
+        self._load_ui_and_find_widgets()
 
-        # 데이터 및 상태 변수
+        # 데이터 및 상태 변수 초기화
         self.all_log_entries = log_entries or []
         self.filtered_log_entries = []
         self.event_colors = event_colors or {}
-        
-        self.event_type_map = {
-            "화재": "0", "폭행": "1", "누워있는 사람": "2", 
-            "실종자": "3", "무단 투기": "4", "흡연자": "5"
-        }
-
         self.recording_files = sorted([f for f in os.listdir("recordings") if f.endswith('.mp4')], reverse=True)
         self.video_capture = None
         self.playing_video = False
-        
         self.current_page = 1
         self.items_per_page = 20
 
-        self.setupUi()
+        # 시그널 연결 및 초기 데이터 로드
         self.connect_signals()
         self.request_logs_from_server()
 
-    # setupUi, connect_signals 및 LogViewerDialog의 모든 메서드는
-    # 기존 코드와 동일하게 이 클래스 내부에 그대로 둡니다.
-    # ... (기존에 작성하신 LogViewerDialog의 모든 메서드를 여기에 붙여넣기) ...
-    def setupUi(self):
-        main_layout = QHBoxLayout(self)
-        video_panel = QWidget()
-        video_layout = QVBoxLayout(video_panel)
-        self.video_display = QLabel("재생할 동영상을 선택하세요.")
-        self.video_display.setFixedSize(640, 480)
-        self.video_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_display.setStyleSheet("background-color: rgb(40, 40, 40); color: white;")
-        self.video_display.setScaledContents(True)
-        video_layout.addWidget(self.video_display)
-        video_layout.addStretch()
-        main_layout.addWidget(video_panel)
-        control_panel = QWidget()
-        control_layout = QVBoxLayout(control_panel)
-        search_groupbox = QGroupBox("검색 조건")
-        search_layout = QGridLayout(search_groupbox)
-        self.start_date_edit = QDateEdit(calendarPopup=True)
-        self.start_date_edit.setDate(QDate.currentDate().addDays(-7))
-        self.end_date_edit = QDateEdit(calendarPopup=True)
-        self.end_date_edit.setDate(QDate.currentDate())
-        self.orderby_combo = QComboBox()
-        self.orderby_combo.addItems(["최신순", "오래된 순"])
-        search_layout.addWidget(QLabel("시작일:"), 0, 0)
-        search_layout.addWidget(self.start_date_edit, 0, 1)
-        search_layout.addWidget(QLabel("종료일:"), 1, 0)
-        search_layout.addWidget(self.end_date_edit, 1, 1)
-        search_layout.addWidget(QLabel("정렬:"), 2, 0)
-        search_layout.addWidget(self.orderby_combo, 2, 1)
-        event_groupbox = QGroupBox("이벤트 종류")
-        self.event_checkboxes = {}
-        event_layout = QGridLayout(event_groupbox)
-        event_names = list(self.event_type_map.keys())
-        for i, name in enumerate(event_names):
-            checkbox = QCheckBox(name)
-            checkbox.setChecked(True)
-            self.event_checkboxes[name] = checkbox
-            event_layout.addWidget(checkbox, i // 2, i % 2)
-        search_layout.addWidget(event_groupbox, 3, 0, 1, 2)
-        self.search_button = QPushButton("로그 검색")
-        search_layout.addWidget(self.search_button, 4, 0, 1, 2)
-        control_layout.addWidget(search_groupbox)
-        self.log_table = QTableWidget()
-        self.log_table.setColumnCount(3)
-        self.log_table.setHorizontalHeaderLabels(["발생 시각", "이벤트 종류", "영상 재생"])
-        self.log_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.log_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.log_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.log_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.log_table.setSortingEnabled(True)
-        control_layout.addWidget(self.log_table)
-        pagination_layout = QHBoxLayout()
-        self.prev_button = QPushButton("이전")
-        self.page_label = QLabel("1 / 1")
-        self.next_button = QPushButton("다음")
-        pagination_layout.addStretch()
-        pagination_layout.addWidget(self.prev_button)
-        pagination_layout.addWidget(self.page_label)
-        pagination_layout.addWidget(self.next_button)
-        pagination_layout.addStretch()
-        control_layout.addLayout(pagination_layout)
-        main_layout.addWidget(control_panel, 1)
+    def _load_ui_and_find_widgets(self):
+        # .ui 파일을 동적으로 로드
+        loader = QUiLoader()
+        ui_file_path = "log_viewer.ui"
+        ui_file = QFile(ui_file_path)
+
+        if not ui_file.open(QIODevice.ReadOnly):
+            # [수정] 에러 메시지를 간결한 형태로 변경
+            QMessageBox.critical(self, "UI 파일 오류", f"UI 파일을 열 수 없습니다: {ui_file.errorString()}")
+            QTimer.singleShot(0, self.close)
+            return
+        
+        # self를 부모로 하여 위젯을 로드하면 findChild로 찾을 수 있게 됨
+        ui_widget = loader.load(ui_file, self)
+        ui_file.close()
+
+        # 메인 레이아웃을 다이얼로그에 설정
+        self.setLayout(ui_widget.layout())
+
+        # .ui 파일에 정의된 위젯들을 objectName으로 찾아 self의 속성으로 만듦
+        self.video_display = self.findChild(QLabel, "video_display")
+        self.start_date_edit = self.findChild(QDateEdit, "start_date_edit")
+        self.end_date_edit = self.findChild(QDateEdit, "end_date_edit")
+        self.orderby_combo = self.findChild(QComboBox, "orderby_combo")
+        self.search_button = self.findChild(QPushButton, "search_button")
+        self.log_table = self.findChild(QTableWidget, "log_table")
+        self.prev_button = self.findChild(QPushButton, "prev_button")
+        self.page_label = self.findChild(QLabel, "page_label")
+        self.next_button = self.findChild(QPushButton, "next_button")
+
+        # 이벤트 이름과 코드, 체크박스 위젯을 매핑
+        self.event_type_map = {
+            "화재": ("0", self.findChild(QCheckBox, "cb_fire")),
+            "폭행": ("1", self.findChild(QCheckBox, "cb_assault")),
+            "누워있는 사람": ("2", self.findChild(QCheckBox, "cb_fallen")),
+            "실종자": ("3", self.findChild(QCheckBox, "cb_missing")),
+            "무단 투기": ("4", self.findChild(QCheckBox, "cb_dumping")),
+            "흡연자": ("5", self.findChild(QCheckBox, "cb_smoking")),
+        }
+        self.event_checkboxes = {name: data[1] for name, data in self.event_type_map.items()}
+
+        self.start_date_edit.setDate(QDate(2025, 9, 21))
+        self.end_date_edit.setDate(QDate(2025, 9, 22))
 
     def connect_signals(self):
         self.video_timer = QTimer(self)
@@ -114,12 +106,17 @@ class LogViewerDialog(QDialog):
         self.search_button.clicked.connect(self.request_logs_from_server)
         self.prev_button.clicked.connect(self.go_to_prev_page)
         self.next_button.clicked.connect(self.go_to_next_page)
-
+    
     def request_logs_from_server(self):
         start_date = self.start_date_edit.date().toString("yyyyMMdd")
         end_date = self.end_date_edit.date().toString("yyyyMMdd")
         orderby = self.orderby_combo.currentText() == "최신순"
-        detection_types = [self.event_type_map[name] for name, cb in self.event_checkboxes.items() if cb.isChecked()]
+        
+        detection_types = []
+        for name, (code, checkbox) in self.event_type_map.items():
+            if checkbox.isChecked():
+                detection_types.append(code)
+
         start_dt = self.start_date_edit.dateTime().toPython().date()
         end_dt = self.end_date_edit.dateTime().toPython().date()
         self.filtered_log_entries = []
@@ -127,9 +124,10 @@ class LogViewerDialog(QDialog):
             try:
                 log_dt = datetime.strptime(entry['timestamp'], "%Y-%m-%d %H:%M:%S").date()
                 if not (start_dt <= log_dt <= end_dt): continue
-                is_target_event = any(name in entry['message'] for name, code in self.event_type_map.items() if code in detection_types)
+                is_target_event = any(name in entry['message'] for name, (code, cb) in self.event_type_map.items() if code in detection_types)
                 if is_target_event: self.filtered_log_entries.append(entry)
             except ValueError: continue
+        
         self.filtered_log_entries.sort(key=lambda x: x['timestamp'], reverse=orderby)
         self.current_page = 1
         self.update_table_display()
@@ -215,3 +213,8 @@ class LogViewerDialog(QDialog):
         self.video_timer.stop()
         if self.video_capture: self.video_capture.release()
         super().closeEvent(event)
+
+
+# --- 스크립트가 직접 실행될 때만 run_test 함수를 호출 ---
+if __name__ == '__main__':
+    run_test()
