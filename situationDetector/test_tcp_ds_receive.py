@@ -1,8 +1,11 @@
 # test_db_server.py
 import socket
+import struct
+import pickle
+import cv2
 
 # tcp_ds_sender.py에 정의된 HOST와 PORT와 동일하게 설정합니다.
-TCP_HOST = 'localhost'
+TCP_HOST = '192.168.0.180'
 TCP_PORT = 1201
 
 def run_test_server():
@@ -24,37 +27,30 @@ def run_test_server():
         server_socket.listen(1)
         print(f"[*] 테스트 DB 서버가 {TCP_HOST}:{TCP_PORT} 에서 연결을 기다리고 있습니다.")
 
-        while True:
-            # 클라이언트의 연결 요청을 수락합니다.
-            # conn: 데이터 송수신에 사용될 새로운 소켓 객체
-            # addr: 연결된 클라이언트의 주소
-            print("\n[*] 새 클라이언트의 연결을 기다립니다...")
-            conn, addr = server_socket.accept()
-            print(f"[*] {addr} 에서 클라이언트가 연결되었습니다.")
+        # 클라이언트의 연결 요청을 수락합니다.
+        # conn: 데이터 송수신에 사용될 새로운 소켓 객체
+        # addr: 연결된 클라이언트의 주소
+        print("\n[*] 새 클라이언트의 연결을 기다립니다...")
+        conn, addr = server_socket.accept()
+        print(f"[*] {addr} 에서 클라이언트가 연결되었습니다.")
 
-            try:
-                # 클라이언트가 연결을 유지하는 동안 데이터를 계속 수신합니다.
-                while True:
-                    # 최대 1024 바이트의 데이터를 수신합니다.
-                    data = conn.recv(1024)
-                    
-                    # 수신된 데이터가 없으면 클라이언트가 연결을 종료한 것입니다.
-                    if not data:
-                        print(f"[*] 클라이언트({addr})와의 연결이 종료되었습니다.")
-                        break
-                    
-                    # 수신된 데이터는 바이트(bytes) 형식이므로,
-                    # 사람이 읽을 수 있는 문자열(string)로 디코딩하여 출력합니다.
-                    # tcp_ds_sender에서 별도의 인코딩을 지정하지 않았으므로, 기본 'utf-8'을 사용합니다.
-                    print(f" -> 수신 데이터 ({addr}): {data.decode('utf-8')}")
-            
-            except ConnectionResetError:
-                # 클라이언트가 비정상적으로 연결을 종료했을 때 발생하는 예외를 처리합니다.
-                print(f"[!] 클라이언트({addr})와의 연결이 비정상적으로 끊어졌습니다.")
-            
-            finally:
-                # 현재 클라이언트와의 연결 소켓을 닫습니다.
-                conn.close()
+        a = int(input("Input data: "))
+        conn.send(struct.pack("BBBB", 2, 1, 1, a))
+
+
+        data = conn.recv(36)
+        print(struct.unpack('BBBIIIIIII', data))
+        file = open("data.avi", "wb")
+        video_size = int(struct.unpack("I",data[27:-1])[0])
+        video = b""
+        while True:
+            data = conn.recv(1024)
+            if (data == b"DONE"):
+                print("Receiving Done")
+                break
+            file.write(data)
+        file.close()
+        conn.close()
 
     except KeyboardInterrupt:
         # Ctrl+C 입력 시 서버를 정상적으로 종료합니다.

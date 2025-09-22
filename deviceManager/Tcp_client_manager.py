@@ -6,7 +6,7 @@ import time
 
 class Tcp_client_manager():
     def __init__(self):
-        self.TCP_HOST = "192.168.0.2"
+        self.TCP_HOST = "192.168.0.180"
         self.TCP_PORT = 1201
         self.PATROL_NUMBER = 1
         self.deviceManager_ID = 0x01
@@ -14,6 +14,7 @@ class Tcp_client_manager():
         self.recv_data = ""
         self.alarm = 0
         self.last_alarm = 0
+        
     def socket_init(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         connected = False
