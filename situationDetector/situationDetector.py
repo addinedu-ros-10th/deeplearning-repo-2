@@ -15,7 +15,7 @@ from situationDetector.detect.feat_detect_fire import run_fire_detect
 # from situationDetector.detect.feat_detect_smoke import run_smoke_detect
 # from situationDetector.detect.feat_detect_trash import run_trash_detect
 # from situationDetector.detect.feat_detect_violence import run_violence_detect
-# from situationDetector.detect.feat_detect_weapon import run_weapon_detect
+from situationDetector.detect.feat_detect_weapon import run_weapon_detect
 
 from situationDetector.test_data.test_constant import TEST_AI_JSON
 
@@ -55,6 +55,8 @@ class SituationDetector:
     self.db_tcp_connected_event = threading.Event()
     
     # 3. 공유 데이터 큐 초기화
+      # analyzer_input_queues 데이터 형식
+      # (<프레임 카운트>, <영상 시각>, <프레임 데이터>)
     self.analyzer_input_queues = [queue.Queue(maxsize=10) for _ in range(self.NUM_ANALYZERS)]
     self.aggregation_queue = queue.Queue() # 분석 결과를 모으는 큐
     self.final_output_queue = queue.Queue() # Main Server에 전송할 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
@@ -81,20 +83,30 @@ class SituationDetector:
     """
     1. 6가지 분석 스레드의 결과 스레드를 취합하여 하나의 Json으로 만듦
     2. 6가지 분석이 완전히 끝났을 때에만 Main Server로 전송하기 위한 별도의 스레드 함수
+    (분석 결과 큐) -> (6개 분석결과 취합 큐)
     
     data_json = {
-      detection : [
-        "class_id" : # 순찰 이벤트 id
-        "class_name" : # 순찰 이벤트 이름
-        "confidence" : # detection 신뢰도
-        "bbox" : {
-          "x1" :
-          "y1" :
-          "x2" :
-          "y2" :
-        }
-      ],
-      detection_count,
+      detection : 
+        "feat_detect_fire" : [
+          {
+          "class_id" : # 순찰 이벤트 id
+          "class_name" : # 순찰 이벤트 이름
+          "confidence" : # detection 신뢰도
+          "bbox" : {
+            "x1" :
+            "y1" :
+            "x2" :
+            "y2" :
+          }
+          detection_count,
+        ],
+        "feat_detect_violance" : [
+          {
+            <이벤트 정보>
+          },
+          detection_count,
+        ]
+      }
       timestamp,
       patrol_number,
     }
@@ -104,38 +116,59 @@ class SituationDetector:
     
     while not self.shutdown_event.is_set():
       try:
+        # result_package 언패킹
         result_package = self.aggregation_queue.get(timeout=1.0)
-    
+
         timestamp = result_package["timestamp"] # 시간
         analyzer_name = result_package["analyzer_name"] # 기능 이름
-        detection = result_package["detection"] # 감지 정보
-        detection_count = result_package["detection_count"] # 감지 수
-        patrol_number = result_package["patrol_number"] # 순찰차 이름
         
         # 2. 버퍼에 해당 타임스탬프가 없으면 새로 생성
         if timestamp not in results_buffer:
-          results_buffer[timestamp][analyzer_name]
+          results_buffer[timestamp] = {}
         
+        # 3. 현재 분석 결과를 버퍼에 저장
+        results_buffer[timestamp][analyzer_name] = result_package
+
         # 4. 모든 분석 결과 (6가지)가 모였는지 확인
         if len(results_buffer[timestamp]) == self.NUM_ANALYZERS:
           print(f"situationDetector (Aggregator) : {timestamp} 에 대한 모든 결과 취합 완료.")
 
-          # results_buffer에 저장된 모든 detection_count의 합계 계산
-          total_detection_count = sum(res["detection_count"] for res in results_buffer[timestamp].values())
-                    
-          # 5. Main Server에 저장할 Json 데이터 생성
+          final_detections = {}
+          # 5. 순찰차 이름은 기능에 관계없이 동일하므로 하나만 참조
+          patrol_number = result_package["patrol_number"]
+          
+          # 6. 감지 정보를 모든 버퍼에서 detection 리스트 확인 및 1개 json에 추가
+          for name, result in results_buffer[timestamp].items():
+            if result["detection_count"] > 0:
+              
+              # 6-1. 현재 기능의 detection 데이터 리스트 가져오기
+              detection_list = result["detection"]
+              
+              # 6-2. AI_JSON Schema와 동일하게 기능별 감지 갯수 추가
+              detection_list.append({
+                "detection_count" : result["detection_count"], # 감지 수
+              })
+
+              # 6-3. 완성된 기능별 detect 데이터를 final_detections 딕셔너리에 저장
+              final_detections[name] = detection_list
+
+          # 5. 최종 json 데이터 생성
           agg_json_data = {
-            "detection" : results_buffer[timestamp], # 감지 정보 저장
-            "detection_count" : total_detection_count, # 감지 수
+            # detection 데이터 : 기능 이름 () - 감지한 객체 리스트 저장
+            "detection" : final_detections,
             "timestamp" : timestamp, # 시간
-            "patrol_number" : results_buffer[timestamp]["patrol_number"],
+            "patrol_number" : patrol_number,
           }
           
-          # 6. json 형태로 final_output_queue에 저장
-          self.final_output_queue.put(agg_json_data)
+          # 테스트코드 : 최종 json 데이터 단순출력
+          print(agg_json_data)
+
+          # # 6. json 형태로 final_output_queue에 저장
+          # self.final_output_queue.put(agg_json_data)
           
           # 7. 처리 완료된 타임스탬프는 버퍼에서 제거
           del results_buffer[timestamp]
+
         
         # # 오래된 타임스탬프 정리
         # current_time = time.time()
