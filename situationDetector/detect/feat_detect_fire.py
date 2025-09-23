@@ -81,7 +81,7 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
         "patrol_number" : 1
       }
       
-      # print(result_package)
+      print(result_package)
       
       try:
         # aggregation_queue 추가 타입 : json

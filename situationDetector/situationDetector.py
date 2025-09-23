@@ -15,7 +15,7 @@ from situationDetector.detect.feat_detect_fire import run_fire_detect
 # from situationDetector.detect.feat_detect_smoke import run_smoke_detect
 # from situationDetector.detect.feat_detect_trash import run_trash_detect
 # from situationDetector.detect.feat_detect_violence import run_violence_detect
-from situationDetector.detect.feat_detect_weapon import run_weapon_detect
+# from situationDetector.detect.feat_detect_weapon import run_weapon_detect
 
 from situationDetector.test_data.test_constant import TEST_AI_JSON
 

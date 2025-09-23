@@ -9,7 +9,7 @@ def receive_cv_video(analyzer_input_queue : List[queue.Queue],
   # If you have multiple webcams, you might need to try 1, 2, etc.
   # cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
   # cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
-  cap = cv2.VideoCapture("http://192.168.0.149:5000/stream?src=0")
+  cap = cv2.VideoCapture("http://192.168.0.35:5000/stream?src=0")
 
   # Check if the webcam is opened successfully
   if not cap.isOpened():
