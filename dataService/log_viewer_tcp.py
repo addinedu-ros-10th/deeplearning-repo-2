@@ -78,7 +78,7 @@ class LogViewerDialog(QDialog):
             "폭행": ("1", self.findChild(QCheckBox, "cb_assault")),
             "누워있는 사람": ("2", self.findChild(QCheckBox, "cb_fallen")),
             "실종자": ("3", self.findChild(QCheckBox, "cb_missing")),
-            "무단 투기": ("4", "cb_dumping"),
+            "무단 투기": ("4", self.findChild(QCheckBox, "cb_dumping")),
             "흡연자": ("5", self.findChild(QCheckBox, "cb_smoking")),
         }
         self.event_checkboxes = {name: data[1] for name, data in self.event_type_map.items()}
