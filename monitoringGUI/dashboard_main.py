@@ -282,8 +282,8 @@ class PatrolDashboard(QMainWindow):
 
 
         self.event_colors = {"화재":"red", "폭행":"orange", "누워있는 사람":"purple", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
-        if os.path.exists("alert.wav"):
-            self.alert_sound = pygame.mixer.Sound("alert.wav")
+        if os.path.exists("alert.mp3"):
+            self.alert_sound = pygame.mixer.Sound("alert.mp3")
             self.alert_channel = pygame.mixer.Channel(0)
         
         self.tcp_receiver = TcpReceiver(self)
@@ -389,11 +389,15 @@ class PatrolDashboard(QMainWindow):
         html_log = f"<font color='{color}'>{timestamp} - {log_message}</font>"
         self.log_browser.append(html_log)
         self.log_entries.append({"timestamp": timestamp, "message": log_message})
+
+        # [수정] 아래 부분을 변경합니다.
         if event_type in ["폭행", "화재", "누워있는 사람", "실종자 발견"]:
-            if self.alert_sound and self.alert_channel:
-                self.alert_channel.set_endevent(pygame.USEREVENT + 1)
-                pygame.time.set_timer(pygame.USEREVENT + 1, 5000, loops=1)
-                self.alert_channel.play(self.alert_sound)
+            # 현재 경고음이 울리고 있지 않을 때만 새로 재생
+            if self.alert_sound and self.alert_channel and not self.alert_channel.get_busy():
+                # maxtime=5000 옵션으로 5초 동안만 재생
+                self.alert_channel.play(self.alert_sound, maxtime=5000)
+            
+                
             dialog = AlertDialog(self, event_type, prob)
             self.open_alerts.append(dialog)
             self.place_alert_dialog(dialog)

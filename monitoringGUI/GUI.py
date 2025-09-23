@@ -503,7 +503,7 @@ class PatrolDashboard(QMainWindow):
 
         if not self.cap.isOpened():
             QMessageBox.critical(self, "스트림 오류", f"비디오 스트림을 열 수 없습니다:\n{self.video_source}")
-            sys.exit() # 스트림 열기 실패 시 프로그램 종료
+            # sys.exit() # 스트림 열기 실패 시 프로그램 종료
 
         # 메인 타이머 설정: 30fps로 프레임 업데이트
         self.timer = QTimer(self)

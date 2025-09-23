@@ -1,5 +1,3 @@
-# log_viewer.py
-
 import sys
 import os
 import re
@@ -8,74 +6,51 @@ from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import (QApplication, QDialog, QWidget, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QCheckBox, QDateEdit, QComboBox,
-                               QHeaderView, QAbstractItemView, QMessageBox)
+                               QHeaderView, QAbstractItemView, QMessageBox, QSplitter, QGroupBox)
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, QIODevice, QTimer, QDate
 from PySide6.QtGui import QImage, QPixmap
-
-
-
-
-# --- 테스트를 위한 실행 코드 ---   python3  log_viewer.py 시에 테스트용 로그 데이터를 확인할 수 있음
-def run_test():
-    """테스트를 위한 LogViewerDialog 실행 함수"""
-    app = QApplication(sys.argv)
-    
-    # 테스트용 로그 데이터
-    test_logs = [
-        {'timestamp': '2025-09-21 14:10:30', 'message': '[자동] 화재 감지됨 (확률: 0.95)'},
-        {'timestamp': '2025-09-22 11:05:00', 'message': '[수동] 폭행 감지됨 (확률: 1.00)'}
-    ]
-    
-    # LogViewerDialog 인스턴스 생성 및 실행
-    dialog = LogViewerDialog(log_entries=test_logs)
-    dialog.show()
-    
-    sys.exit(app.exec())
-
 
 # --- 로그 뷰어 다이얼로그 클래스 ---
 class LogViewerDialog(QDialog):
     def __init__(self, parent=None, log_entries=None, event_colors=None):
         super().__init__(parent)
         
-        # UI 파일 로드 및 위젯 초기화
         self._load_ui_and_find_widgets()
 
-        # 데이터 및 상태 변수 초기화
         self.all_log_entries = log_entries or []
         self.filtered_log_entries = []
         self.event_colors = event_colors or {}
-        self.recording_files = sorted([f for f in os.listdir("recordings") if f.endswith('.mp4')], reverse=True)
+        try:
+            self.recording_files = sorted([f for f in os.listdir("recordings") if f.endswith('.mp4')], reverse=True)
+        except FileNotFoundError:
+            self.recording_files = []
+            print("Warning: 'recordings' directory not found.")
+            
         self.video_capture = None
         self.playing_video = False
         self.current_page = 1
         self.items_per_page = 20
+        self._initial_size_set = False
 
-        # 시그널 연결 및 초기 데이터 로드
         self.connect_signals()
         self.request_logs_from_server()
+        self.initial_load_actions()
 
     def _load_ui_and_find_widgets(self):
-        # .ui 파일을 동적으로 로드
         loader = QUiLoader()
         ui_file_path = "log_viewer.ui"
         ui_file = QFile(ui_file_path)
 
         if not ui_file.open(QIODevice.ReadOnly):
-            # [수정] 에러 메시지를 간결한 형태로 변경
             QMessageBox.critical(self, "UI 파일 오류", f"UI 파일을 열 수 없습니다: {ui_file.errorString()}")
             QTimer.singleShot(0, self.close)
             return
         
-        # self를 부모로 하여 위젯을 로드하면 findChild로 찾을 수 있게 됨
         ui_widget = loader.load(ui_file, self)
         ui_file.close()
-
-        # 메인 레이아웃을 다이얼로그에 설정
         self.setLayout(ui_widget.layout())
 
-        # .ui 파일에 정의된 위젯들을 objectName으로 찾아 self의 속성으로 만듦
         self.video_display = self.findChild(QLabel, "video_display")
         self.start_date_edit = self.findChild(QDateEdit, "start_date_edit")
         self.end_date_edit = self.findChild(QDateEdit, "end_date_edit")
@@ -86,7 +61,11 @@ class LogViewerDialog(QDialog):
         self.page_label = self.findChild(QLabel, "page_label")
         self.next_button = self.findChild(QPushButton, "next_button")
 
-        # 이벤트 이름과 코드, 체크박스 위젯을 매핑
+        header = self.log_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
         self.event_type_map = {
             "화재": ("0", self.findChild(QCheckBox, "cb_fire")),
             "폭행": ("1", self.findChild(QCheckBox, "cb_assault")),
@@ -96,6 +75,12 @@ class LogViewerDialog(QDialog):
             "흡연자": ("5", self.findChild(QCheckBox, "cb_smoking")),
         }
         self.event_checkboxes = {name: data[1] for name, data in self.event_type_map.items()}
+
+        # --- [추가] '이벤트 종류' 그룹 박스의 최소 너비를 코드로 설정 ---
+        event_groupbox = self.findChild(QGroupBox, "event_groupbox")
+        if event_groupbox:
+            event_groupbox.setMinimumWidth(310) # 최소 너비를 300px로 설정
+        # ---------------------------------------------------------
 
         self.start_date_edit.setDate(QDate(2025, 9, 21))
         self.end_date_edit.setDate(QDate(2025, 9, 22))
@@ -107,6 +92,13 @@ class LogViewerDialog(QDialog):
         self.prev_button.clicked.connect(self.go_to_prev_page)
         self.next_button.clicked.connect(self.go_to_next_page)
     
+    def initial_load_actions(self):
+        """프로그램 시작 시 첫 로그를 자동 선택하고 영상을 재생합니다."""
+        if self.filtered_log_entries:
+            self.log_table.selectRow(0)
+            first_log_timestamp = self.filtered_log_entries[0]['timestamp']
+            self.play_video_for_log(first_log_timestamp)
+
     def request_logs_from_server(self):
         start_date = self.start_date_edit.date().toString("yyyyMMdd")
         end_date = self.end_date_edit.date().toString("yyyyMMdd")
@@ -208,7 +200,18 @@ class LogViewerDialog(QDialog):
                 self.video_timer.stop()
                 if self.video_capture: self.video_capture.release()
                 self.playing_video = False
-    
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        
+        if not self._initial_size_set:
+            splitter = self.findChild(QSplitter, "main_splitter")
+            if splitter:
+                total_width = self.width()
+                splitter.setSizes([int(total_width * 0.6), int(total_width * 0.4)])
+            
+            self._initial_size_set = True
+
     def closeEvent(self, event):
         self.video_timer.stop()
         if self.video_capture: self.video_capture.release()
@@ -217,4 +220,17 @@ class LogViewerDialog(QDialog):
 
 # --- 스크립트가 직접 실행될 때만 run_test 함수를 호출 ---
 if __name__ == '__main__':
+    def run_test():
+        app = QApplication(sys.argv)
+        
+        test_logs = [
+            {'timestamp': '2025-09-21 14:10:30', 'message': '[자동] 화재 감지됨 (확률: 0.95)'},
+            {'timestamp': '2025-09-22 11:05:00', 'message': '[수동] 폭행 감지됨 (확률: 1.00)'}
+        ]
+        
+        dialog = LogViewerDialog(log_entries=test_logs)
+        dialog.showMaximized()
+        
+        sys.exit(app.exec())
+        
     run_test()
