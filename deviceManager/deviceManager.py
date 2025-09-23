@@ -23,39 +23,37 @@ class deviceManager(Tcp_client_manager):
         self.event_video_ready = False
 
     def event_data_send(self):
+        time_list = [self.current_time.year, self.current_time.month, self.current_time.day, self.current_time.hour, self.current_time.minute, self.current_time.second]
         
-        while True:
-            time_list = [self.current_time.year, self.current_time.month, self.current_time.day, self.current_time.hour, self.current_time.minute, self.current_time.second]
-            
-            if (self.alarm == 0):
-                data = struct.pack("BBBIIIIIII", self.deviceManager_ID, self.situationDetector_ID, 1, *time_list, 0)
-                self.send_data(data)
+        if (self.alarm == 0):
+            return
 
-            if (self.event_video_ready):
-                data = struct.pack("BBBIIIIIII", self.deviceManager_ID, self.situationDetector_ID, 1, *time_list, sys.getsizeof(self.event_video))
-                self.send_data(data)
+        if (self.event_video_ready):
+            data = struct.pack("BBBIIIIIII", self.deviceManager_ID, self.situationDetector_ID, 1, *time_list, sys.getsizeof(self.event_video))
+            self.send_data(data)
 
-                with open(self.file_path+f"/embedmediaStorage/{self.current_time.strftime("%Y%m%d%H%M%S")}.avi", "rb") as video:
+            with open(self.file_path+f"/embedmediaStorage/{self.current_time.strftime("%Y%m%d%H%M%S")}.avi", "rb") as video:
+                buffer = video.read(1024)
+                while (buffer):
+                    self.send_data(buffer)
                     buffer = video.read(1024)
-                    while (buffer):
-                        self.send_data(buffer)
-                        buffer = video.read(1024)
-                    self.send_data(b"DONE")
-                self.event_video_ready = False
-            else:
-                pass
-            time.sleep(0.1)
+                self.send_data(b"DONE")
+            self.event_video_ready = False
+        else:
+            return
 
     def event_video_setup(self, frame):    
-        if (len(self.before_video) < self.capture_frame*self.capture_time):
+        if (len(self.before_video) < self.capture_frame*self.capture_time - 200):
             self.before_video.append(frame)
         else:
             if (self.alarm == 0):
+                self.after_video.clear()
                 self.before_video.pop(0)
                 self.before_video.append(frame)
             else:
-                if (len(self.after_video) < self.capture_frame*self.capture_time):
+                if (len(self.after_video) < self.capture_frame*self.capture_time + 200):
                     self.after_video.append(frame)
+                    
                 else:
                     self.event_video = self.before_video + self.after_video
                     self.current_time = datetime.now()
@@ -65,38 +63,43 @@ class deviceManager(Tcp_client_manager):
                         out.write(self.event_video[i])
                     
                     print(len(self.before_video), len(self.after_video))
-                    self.before_video = self.after_video
+                    self.before_video = self.after_video[400:]
                     self.after_video.clear()
                     self.event_video_ready = True
                     
                     self.event_data_send()
+                    out.release()
         return
     
     def alarm_set(self):
-        pygame.init()
+        pygame.mixer.init()
+        pygame.mixer.set_num_channels(1)
+        sound = pygame.mixer.Channel(0)
         while True:
             if self.alarm == 0:
                 print("None")
+                continue
+
             elif self.alarm == 1:
-                self.sound = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/fire.mp3')
-                self.sound.play()
+                alarm = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/fire.mp3')
                 print("화재용 LED")
             elif self.alarm == 2:
-                self.sound = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/fight.mp3')
-                self.sound.play()
+                alarm = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/fight.mp3')
                 print("폭행 LED")
             elif self.alarm == 3:
-                self.sound = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/trash.mp3')
-                self.sound.play()
+                alarm = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/trash.mp3')
                 print("무단투기 LED")
             elif self.alarm == 4:
-                self.sound = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/smoke.mp3')
-                self.sound.play()
+                alarm = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/smoke.mp3')
                 print("흡연자 LED")
             else:
                 print("Wrong Alarm Type")
-            
-            time.sleep(3)
+
+            if (sound.get_busy()):
+                pass
+            else:
+                sound.play(alarm)
+            time.sleep(0.1)
 
     def media_init(self):
         while True:
@@ -107,6 +110,7 @@ class deviceManager(Tcp_client_manager):
                 if (self.cap.isOpened()):
                     print("Video Capture Start")
                     break
+                
             except Exception as e:
                 print(f"영상 수신 오류: {e}")
 
@@ -114,7 +118,7 @@ class deviceManager(Tcp_client_manager):
         while True:
             ret, frame = self.cap.read()
             if (ret):
-                self.event_video_setup(frame)                    
+                self.event_video_setup(frame)                  
                 time.sleep(1/self.capture_frame)
 
             else:
