@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QWidget, QLabel, QPushButt
 from PySide6.QtUiTools import QUiLoader # .ui 디자인 파일을 동적으로 로드하는 클래스
 from PySide6.QtCore import QFile, QIODevice, QTimer, QDate # 파일, 입출력 장치, 타이머, 날짜 관련 클래스
 from PySide6.QtGui import QImage, QPixmap # GUI에서 이미지를 다루기 위한 클래스
+
 # --- 로그 뷰어 다이얼로그(창) 클래스 정의 ---
 class LogViewerDialog(QDialog):
     """
@@ -111,8 +112,8 @@ class LogViewerDialog(QDialog):
         self.search_button.clicked.connect(self.request_logs_from_server)
         self.prev_button.clicked.connect(self.go_to_prev_page)
         self.next_button.clicked.connect(self.go_to_next_page)
-3:39
-def initial_load_actions(self):
+
+    def initial_load_actions(self):
         """프로그램이 시작될 때 첫 번째 로그를 자동으로 선택하고 해당 영상을 재생하여 사용자 경험을 향상시킵니다."""
         # 필터링된 로그가 하나라도 있을 경우에만 실행됩니다.
         if self.filtered_log_entries:
@@ -122,6 +123,7 @@ def initial_load_actions(self):
             first_log_timestamp = self.filtered_log_entries[0]['timestamp']
             # 해당 타임스탬프의 영상을 재생하는 함수를 호출합니다.
             self.play_video_for_log(first_log_timestamp)
+
     def request_logs_from_server(self):
         """UI의 검색 조건에 따라 로그를 필터링하고 테이블을 업데이트합니다. (현재는 로컬 데이터를 필터링하는 시뮬레이션)"""
         # --- 실제로는 이 부분에서 서버에 보낼 JSON 데이터를 생성합니다. ---
@@ -151,6 +153,7 @@ def initial_load_actions(self):
         # 첫 페이지로 이동한 후 테이블 내용을 업데이트합니다.
         self.current_page = 1
         self.update_table_display()
+
     def update_table_display(self):
         """필터링된 로그 데이터를 현재 페이지에 맞게 테이블에 표시합니다."""
         # 데이터를 채우기 전에 정렬 기능을 잠시 비활성화하여 성능 저하를 막습니다.
@@ -274,6 +277,7 @@ def initial_load_actions(self):
         self.video_timer.stop()
         if self.video_capture: self.video_capture.release()
         super().closeEvent(event)
+
 # --- 스크립트가 직접 실행될 때만 아래 코드가 동작하도록 하는 파이썬 표준 구문 ---
 if _name_ == '_main_':
     def run_test():
