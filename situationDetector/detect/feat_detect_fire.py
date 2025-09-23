@@ -10,6 +10,103 @@ from ultralytics import YOLO
 
 FIRE_MODEL_PATH = "situationDetector/detect/feat_detect_fire/best.pt"
 
+
+def run_fire_detect(analysis_frame_queue: queue.Queue, 
+                    aggregation_queue :queue.Queue,     # 취합 큐
+                    analyzer_name : str,                # 모델 이름
+                    shutdown_event: threading.Event):
+  print("situationDetector (YOLO) : YOLO 스레드 시작, 모델 로드")
+  """
+  result_package = {
+    "timestamp" :
+    "analyzer_name" :
+    "detection" :
+    "detection_count" :
+    "patrol_number" :
+  }
+  """
+  
+  model = YOLO(FIRE_MODEL_PATH)
+  
+  # 프로그램이 종료되지 않은 동안
+  while not shutdown_event.is_set():
+    try:
+      # 큐에서 프레임을 가져오고, timeout을 설정하여 blocking방지 및 종료신호 확인
+      frame_count, frame = analysis_frame_queue.get(timeout=1.0)
+      
+      # 현재 프레임 카운트 정보가 없으면 처리하지 않음
+      if not frame_count:
+        continue
+
+      # YOLO 실행
+      results = model(frame, verbose=False)
+      
+      
+      # result_package = {
+      #   "timestamp" : 
+      #   "analyzer_name" :
+      #   "detection" :
+      #   "detection_count" :
+      #   "patrol_number" :
+      # }
+      
+      # # 분석한 결과 데이터를 취합 큐에 추가
+      # current_timestamp = None
+      # current_patrol_car = None
+      # with metadata_lock:
+      #     current_timestamp = shared_metadata.get("timestamp")
+      #     current_patrol_car = shared_metadata.get("patrol_car_name")
+
+      # if current_timestamp and current_patrol_car:
+      #     json_output = generateDetectJsonDump(results, current_timestamp, current_patrol_car)
+      #     try:
+      #         aggregation_queue.put(json_output, block=False)
+      #     except queue.Full:
+      #         print("situationDetector (YOLO) : DB 큐가 가득 참 / 분석 결과 버립")
+      
+      
+      
+      # # 시각화 부분 (필요시 주석 해제)
+      # annotated_frame = results[0].plot()
+      # cv2.imshow("Detector test", annotated_frame)
+      # if cv2.waitKey(1) & 0xFF == 27:
+      #   print("situationDetector (YOLO) : 종료 키 입력 감지. 종료 신호를 보냅니다.")
+      #   shutdown_event.set()
+      #   break
+
+    except queue.Empty:
+      # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
+      continue
+    except Exception as e:
+      print(f"situationDetector (YOLO) : 처리 중 오류 발생: {e}")
+      break
+  
+  cv2.destroyAllWindows()
+  print("situationDetector (YOLO) : YOLO 스레드 종료")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def generateDetectJsonDump(result, time, patrol_car_name):
   """
   DB Server에 보낼 json 데이터 생성
@@ -41,56 +138,3 @@ def generateDetectJsonDump(result, time, patrol_car_name):
   }
   str_data = json.dumps(transform, ensure_ascii=False)
   return str_data.encode('utf-8') # str 바이트 데이터로 변환하여 return
-
-
-
-
-def run_fire_detect(analysis_frame_queue: queue.Queue, 
-                    db_manager_queue:queue.Queue, 
-                    shared_metadata: dict, 
-                    metadata_lock:threading.Lock,
-                    shutdown_event: threading.Event):
-  print("situationDetector (YOLO) : YOLO 스레드 시작, 모델 로드")
-  
-  model = YOLO(FIRE_MODEL_PATH)
-  
-  # 프로그램이 종료되지 않은 동안
-  while not shutdown_event.is_set():
-    try:
-      # 큐에서 프레임을 가져오고, timeout을 설정하여 blocking방지 및 종료신호 확인
-      frame = analysis_frame_queue.get(timeout=1.0)
-      
-      # YOLO 실행
-      results = model(frame, verbose=False)
-      
-      # 변경/추가된 부분: 메타데이터 읽기 및 JSON 생성 후 DB 큐에 추가
-      current_timestamp = None
-      current_patrol_car = None
-      with metadata_lock:
-          current_timestamp = shared_metadata.get("timestamp")
-          current_patrol_car = shared_metadata.get("patrol_car_name")
-
-      if current_timestamp and current_patrol_car:
-          json_output = generateDetectJsonDump(results, current_timestamp, current_patrol_car)
-          try:
-              db_manager_queue.put(json_output, block=False)
-          except queue.Full:
-              print("situationDetector (YOLO) : DB 큐가 가득 참 / 분석 결과 버립")
-      
-      # # 시각화 부분 (필요시 주석 해제)
-      # annotated_frame = results[0].plot()
-      # cv2.imshow("Detector test", annotated_frame)
-      # if cv2.waitKey(1) & 0xFF == 27:
-      #   print("situationDetector (YOLO) : 종료 키 입력 감지. 종료 신호를 보냅니다.")
-      #   shutdown_event.set()
-      #   break
-
-    except queue.Empty:
-      # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
-      continue
-    except Exception as e:
-      print(f"situationDetector (YOLO) : 처리 중 오류 발생: {e}")
-      break
-  
-  cv2.destroyAllWindows()
-  print("situationDetector (YOLO) : YOLO 스레드 종료")

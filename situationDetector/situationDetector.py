@@ -1,0 +1,241 @@
+# situationDetector.py
+import threading
+import time
+import queue
+
+from situationDetector.receiver.broadcast_receiver import receive_cv_video
+from situationDetector.receiver.tcp_dm_receiver import receive_event_video
+from situationDetector.test_data.udp_dm_receiver import receive_video_udp
+
+from situationDetector.sender.tcp_main_sender import send_tcp_data_to_main
+from situationDetector.sender.udp_main_sender import send_udp_frame_to_main
+
+from situationDetector.detect.feat_detect_fire import run_fire_detect
+# from situationDetector.detect.feat_detect_fall import run_fall_detect
+# from situationDetector.detect.feat_detect_smoke import run_smoke_detect
+# from situationDetector.detect.feat_detect_trash import run_trash_detect
+# from situationDetector.detect.feat_detect_violence import run_violence_detect
+# from situationDetector.detect.feat_detect_weapon import run_weapon_detect
+
+from situationDetector.test_data.test_constant import TEST_AI_JSON
+
+
+"""
+situationDetector 클래스
+
+주요 기능
+
+1. 세부 기능, 통신은 각 모듈의 1~3개의 간단한 함수로 구현
+2. 영상 프레임 데이터를 GUI 전송용 + 6개 기능 구동용으로 7개로 분배해주는 구현에서
+생산자 - 소비자 (Producer-Customer) 패턴 + 큐 조합으로 구현
+3. 분석결과 취합 : 각 프레임에 대해서 분석 결과가 모두 모였는지 확인하여, 6가지 기능에 대한 분석 결과가 모두 모였으면 Main Server로 전송할 Json 데이터를 생성함
+"""
+
+class SituationDetector:
+  """
+  
+  """
+  def __init__(self):
+    """
+    SituationDetector의 공유 큐, 이벤트, 스레드 리스트 (StateMachine) 등 초기화
+    """
+    # 1. 분석 모델 설정 초기화
+    self.ANALYZER_CONFIG = [
+        # {"name" : "feat_detect_fall", "target" : run_fall_detect},
+        {"name" : "feat_detect_fire", "target" : run_fire_detect},
+        # {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
+        # {"name" : "feat_detect_trash", "target" : run_trash_detect},
+        # {"name" : "feat_detect_violence", "target" : run_violence_detect},
+        # {"name" : "feat_detect_weapon", "target" : run_weapon_detect},
+    ]
+    self.NUM_ANALYZERS = len(self.ANALYZER_CONFIG)
+    
+    # 2. 스레드 공유 이벤트 변수 초기화
+    self.shutdown_event = threading.Event()
+    self.db_tcp_connected_event = threading.Event()
+    
+    # 3. 공유 데이터 큐 초기화
+    self.analyzer_input_queues = [queue.Queue(maxsize=10) for _ in range(self.NUM_ANALYZERS)]
+    self.aggregation_queue = queue.Queue() # 분석 결과를 모으는 큐
+    self.final_output_queue = queue.Queue() # Main Server에 전송할 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
+
+    # 4. 30초 이벤트 비디오 영상 큐 초기화
+    self.event_video_queue = queue.Queue()
+
+    # 5. deviceManager에서 수신하는 30초 영상 데이터 메타데이터
+    # 영상 데이터의 메타데이터는 영상 수신시 처음 수신하는 메타데이터로 저장함
+    self.event_video_metadata = {
+                              "source": 0x01,
+                              "destination" : 0x02,
+                              "patrol_number" : 1,
+                              "timestamp" : None, # unsigned int[6] [년, 월, 일, 시, 분, 초]
+                              "devicestatus" : 0, # 방송 동작 여부, 초기상태 : 0 (비동작)
+                              # "videosize" : 0, # 데이터 바이트 크기
+                              # "video" : 0, # TCP 영상 송수신 4096바이트 데이터 (이벤트 15초 전후 영상 데이터)
+                            }
+    self.event_video_metadata_lock = threading.Lock()
+
+    self.threads = []
+
+  def aggregate_results(self):
+    """
+    1. 6가지 분석 스레드의 결과 스레드를 취합하여 하나의 Json으로 만듦
+    2. 6가지 분석이 완전히 끝났을 때에만 Main Server로 전송하기 위한 별도의 스레드 함수
+    
+    data_json = {
+      detection : [
+        "class_id" : # 순찰 이벤트 id
+        "class_name" : # 순찰 이벤트 이름
+        "confidence" : # detection 신뢰도
+        "bbox" : {
+          "x1" :
+          "y1" :
+          "x2" :
+          "y2" :
+        }
+      ],
+      detection_count,
+      timestamp,
+      patrol_number,
+    }
+    """
+    print("situationDetector (Aggregator) : 취합 스레드 시작")
+    results_buffer = {} # 1. 타임스탬프를 key로 하여 결과 저장
+    
+    while not self.shutdown_event.is_set():
+      try:
+        result_package = self.aggregation_queue.get(timeout=1.0)
+    
+        timestamp = result_package["timestamp"] # 시간
+        analyzer_name = result_package["analyzer_name"] # 기능 이름
+        detection = result_package["detection"] # 감지 정보
+        detection_count = result_package["detection_count"] # 감지 수
+        patrol_number = result_package["patrol_number"] # 순찰차 이름
+        
+        # 2. 버퍼에 해당 타임스탬프가 없으면 새로 생성
+        if timestamp not in results_buffer:
+          results_buffer[timestamp][analyzer_name]
+        
+        # 4. 모든 분석 결과 (6가지)가 모였는지 확인
+        if len(results_buffer[timestamp]) == self.NUM_ANALYZERS:
+          print(f"situationDetector (Aggregator) : {timestamp} 에 대한 모든 결과 취합 완료.")
+
+          # results_buffer에 저장된 모든 detection_count의 합계 계산
+          total_detection_count = sum(res["detection_count"] for res in results_buffer[timestamp].values())
+                    
+          # 5. Main Server에 저장할 Json 데이터 생성
+          agg_json_data = {
+            "detection" : results_buffer[timestamp], # 감지 정보 저장
+            "detection_count" : total_detection_count, # 감지 수
+            "timestamp" : timestamp, # 시간
+            "patrol_number" : results_buffer[timestamp]["patrol_number"],
+          }
+          
+          # 6. json 형태로 final_output_queue에 저장
+          self.final_output_queue.put(agg_json_data)
+          
+          # 7. 처리 완료된 타임스탬프는 버퍼에서 제거
+          del results_buffer[timestamp]
+        
+        # # 오래된 타임스탬프 정리
+        # current_time = time.time()
+        # for ts in list(results_buffer.keys()):
+        #   if current_time - ts > 10.0: # 10초 이상 응답 없는 결과는 폐기
+        #       del results_buffer[ts]
+      except queue.Empty:
+        continue
+      except Exception as e:
+        print(f"situationDetector (Aggregator) : 처리 중 오류 발생: {e}")
+        break
+    print("situationDetector (Aggregator) : 취합 스레드 종료")
+
+  def setup_thread(self):
+    """
+    SituationDetector의 모든 스레드 초기화 및 리스트에 추가하는 초기 작업 수행
+    """
+    # 1. realtimeBroadcaster 영상 cv2 수신 스레드
+    dm_tcp_receiver_thread = threading.Thread(
+      target=receive_cv_video,
+      args=(self.analyzer_input_queues ,self.shutdown_event),
+      daemon=True
+    )
+    self.threads.append(dm_tcp_receiver_thread)
+
+    # 2. DeviceManager TCP 30초 이벤트 비디오 영상 수신 스레드
+    dm_tcp_receiver_thread = threading.Thread(
+      target=receive_event_video,
+      args=(self.event_video_queue, 
+            self.event_video_metadata, 
+            self.event_video_metadata_lock, 
+            self.shutdown_event),
+      daemon=True
+    )
+    self.threads.append(dm_tcp_receiver_thread)
+
+    # 3. N개 분석 스레드 - 소비자
+    for i, config in enumerate(self.ANALYZER_CONFIG):
+      analyzer_thread = threading.Thread(
+        target=config["target"],
+        args=(self.analyzer_input_queues[i], 
+              self.aggregation_queue, 
+              config["name"], 
+              self.shutdown_event),
+        daemon=True
+      )
+      self.threads.append(analyzer_thread)
+
+    # 4. 결과 취합 스레드 (Aggregator)
+    aggregator_thread = threading.Thread(
+      target = self.aggregate_results,
+      daemon=True
+    )
+    self.threads.append(aggregator_thread)
+
+    # 5. Main Server TCP 전송 스레드
+      # 1. 분석 결과 JSON 데이터 발신
+      # 2. 30초 이벤트 비디오 영상 발신
+    main_tcp_sender_thread = threading.Thread(
+      target=send_tcp_data_to_main,
+      args=(self.final_output_queue, 
+            self.db_tcp_connected_event, 
+            self.shutdown_event),
+      daemon=True
+    )
+    self.threads.append(main_tcp_sender_thread)
+
+
+  def run(self):
+    """
+    기능 : 프로그램 진입점, 호출시 다음 작업들을 수행함
+    
+    1. 스레드 초기화 작업 (setup_thread)
+    2. 모든 스레드 시작
+    3. 메인 스레드가 살아있는 동안 실행 (대기작업)
+    4. KeyboardInterrupt 감지시 스레드 정리작업 시작
+    5. 메인 스레드 종료(정리) 작업
+    """
+    self.setup_thread()
+    try:
+      print("situationDetector Main : 서비스의 수신 스레드를 시작합니다.")
+      for t in self.threads:
+        t.start()
+      
+      # 메인 스레드를 종료하지 않고 대기하도록 설정
+      while not self.shutdown_event.is_set():
+        time.sleep(1)
+    except KeyboardInterrupt:
+      print("situationDetector Main : 종료 신호 감지. 모든 스레드를 정리")
+      self.shutdown_event.set()
+    finally:
+      self.stop()
+    
+  def stop(self):
+    self.shutdown_event.set()
+    print("\nsituationDetector Main : 종료 신호를 감지. 모든 스레드 정리")
+    for t in self.threads:
+      t.join(timeout = 5) # 5초간 스레드가 종료되지 않으면 넘어감
+    print("situationDetector Main : 모든 스레드 종료. 프로그램 종료")
+
+if __name__ == "__main__":
+  sd = SituationDetector()
+  sd.run()

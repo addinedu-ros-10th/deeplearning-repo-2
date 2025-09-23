@@ -12,6 +12,19 @@ import threading
 import numpy as np
 from typing import List
 
+# deviceManager에서 수신하는 30초 영상 데이터 메타데이터
+# 영상 데이터의 메타데이터는 영상 수신시 처음 수신하는 메타데이터로 저장함
+video_shared_metadata = {
+                            "source": 0x01,
+                            "destination" : 0x02,
+                            "patrol_number" : 1,
+                            "timestamp" : None, # unsigned int[6] [년, 월, 일, 시, 분, 초]
+                            "devicestatus" : 0, # 방송 동작 여부, 초기상태 : 0 (비동작)
+                            "videosize" : 0, # 데이터 바이트 크기
+                            "video" : 0, # TCP 영상 송수신 4096바이트 데이터 (이벤트 15초 전후 영상 데이터)
+                        }
+
+
 UDP_HOST = '192.168.0.181'  # situationDetector IP 주소
 UDP_PORT = 1200             # situationDetector UDP 수신 포트 주소
 NUM_CHUNKS = 20
