@@ -4,12 +4,12 @@ import time
 import queue
 
 from situationDetector.receiver.broadcast_receiver import receive_cv_video
+from situationDetector.receiver.tcp_dm_event_video_receiver import receive_event_video
 from situationDetector.receiver.tcp_gui_event_clear_receiver import receive_clear_event
 
 from situationDetector.sender.tcp_main_sender import send_tcp_data_to_main
 from situationDetector.sender.udp_main_sender import send_udp_frame_to_main
-# 통합된 통신 모듈 import
-from situationDetector.communicator.tcp_dm_communicator import dm_communicator_server
+from situationDetector.sender.tcp_dm_event_sender import send_event_data_to_dm
 
 from situationDetector.detect.feat_detect_fire import run_fire_detect
 # from situationDetector.detect.feat_detect_fall import run_fall_detect
@@ -73,7 +73,7 @@ class SituationDetector:
     self.analyzer_input_queues = [queue.Queue(maxsize=10) for _ in range(self.NUM_ANALYZERS)]
     self.aggregation_queue = queue.Queue() # 분석 결과를 모으는 큐
     self.final_output_queue = queue.Queue() # Main Server에 전송할 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
-    self.dm_event_queue = queue.Queue() # final_output_queue와 동일한 데이터를 dM으로 보내는 신호 생성용 큐
+    self.dm_event_queue = queue.Queue() #  final_output_queue에 저장하는 내용과 동일 (dM으로 보내는 신호 생성 용)
     
     # GUI로부터 수신하는 경고 방송 해지신호 큐
       # dm_event_queue에서 감지된 데이터를 제거 처리함 (30초동안)
@@ -82,6 +82,19 @@ class SituationDetector:
     # 4. 30초 이벤트 비디오 영상 큐 초기화
     self.event_video_queue = queue.Queue()
 
+    # 5. deviceManager에서 수신하는 30초 영상 데이터 메타데이터
+    # 영상 데이터의 메타데이터는 영상 수신시 처음 수신하는 메타데이터로 저장함
+    self.event_video_metadata = {
+                              "source": 0x01,
+                              "destination" : 0x02,
+                              "patrol_number" : 1,
+                              "timestamp" : None, # unsigned int[6] [년, 월, 일, 시, 분, 초]
+                              "devicestatus" : 0, # 방송 동작 여부, 초기상태 : 0 (비동작)
+                              # "videosize" : 0, # 데이터 바이트 크기
+                              # "video" : 0, # TCP 영상 송수신 4096바이트 데이터 (이벤트 15초 전후 영상 데이터)
+                            }
+    self.event_video_metadata_lock = threading.Lock()
+    
     # [기능] GUI 이벤트 해제 요청을 관리하기 위한 딕셔너리
     # 형식: { alarm_type: end_time }
     self.ignore_events = {}
@@ -204,12 +217,16 @@ class SituationDetector:
 
           # 6. json 형태로 final_output_queue에 저장
           self.final_output_queue.put(agg_json_data)
-          # TODO: dm_event_queue에 어떤 데이터를 넣을지 정책 수립 필요
-          # self.dm_event_queue.put(b'\x02\x01\x01\x01') # 예시
           
           # 7. 처리 완료된 타임스탬프는 버퍼에서 제거
           del results_buffer[timestamp]
-          
+
+        
+        # # 오래된 타임스탬프 정리
+        # current_time = time.time()
+        # for ts in list(results_buffer.keys()):
+        #   if current_time - ts > 10.0: # 10초 이상 응답 없는 결과는 폐기
+        #       del results_buffer[ts]
       except queue.Empty:
         continue
       except Exception as e:
@@ -221,29 +238,29 @@ class SituationDetector:
     """
     SituationDetector의 모든 스레드 초기화 및 리스트에 추가하는 초기 작업 수행
     """
-    # 1. realtimeBroadcaster 실시간 영상 수신 스레드
-    broadcaster_receiver_thread = threading.Thread(
+    # 1. realtimeBroadcaster 영상 cv2 수신 스레드
+    dm_tcp_receiver_thread = threading.Thread(
       target=receive_cv_video,
       args=(self.analyzer_input_queues ,self.shutdown_event),
       daemon=True
     )
-    self.threads.append(broadcaster_receiver_thread)
+    self.threads.append(dm_tcp_receiver_thread)
 
-    # 2. DeviceManager 양방향 통신 스레드 (영상 수신 및 이벤트 송신)
-    dm_communicator_thread = threading.Thread(
-      target=dm_communicator_server,
+    # 2. DeviceManager TCP 30초 이벤트 비디오 영상 수신 스레드
+    dm_tcp_event_receiver_thread = threading.Thread(
+      target=receive_event_video,
       args=(self.event_video_queue, 
-            self.dm_event_queue,
+            self.event_video_metadata, 
+            self.event_video_metadata_lock, 
             self.shutdown_event),
       daemon=True
     )
-    self.threads.append(dm_communicator_thread)
+    self.threads.append(dm_tcp_event_receiver_thread)
 
-    # 3. GUI 순찰 해제 이벤트 수신 스레드
+    # 3. GUI 순찰 해제 이벤트 바이패스 수신 스레드
     clear_event_receiver_thread = threading.Thread(
         target=receive_clear_event,
-        args=(self.event_clear_queue,
-              self.shutdown_event,),
+        args=(self.shutdown_event,),
         daemon=True
     )
     self.threads.append(clear_event_receiver_thread)
@@ -267,7 +284,14 @@ class SituationDetector:
     )
     self.threads.append(aggregator_thread)
 
-    # 6. Main Server TCP 전송 스레드 (분석 결과 JSON 및 30초 이벤트 영상 발신)
+    # 6. deviceManager 순찰 해제 이벤트 바이패스 송신 스레드
+    clear_event_sender_thread = threading.Thread(
+      target=
+    )
+
+    # 5. Main Server TCP 전송 스레드
+      # 1. 분석 결과 JSON 데이터 발신
+      # 2. 30초 이벤트 비디오 영상 발신
     main_tcp_sender_thread = threading.Thread(
       target=send_tcp_data_to_main,
       args=(self.final_output_queue, 
@@ -277,10 +301,20 @@ class SituationDetector:
     )
     self.threads.append(main_tcp_sender_thread)
 
+
   def run(self):
+    """
+    기능 : 프로그램 진입점, 호출시 다음 작업들을 수행함
+    
+    1. 스레드 초기화 작업 (setup_thread)
+    2. 모든 스레드 시작
+    3. 메인 스레드가 살아있는 동안 실행 (대기작업)
+    4. KeyboardInterrupt 감지시 스레드 정리작업 시작
+    5. 메인 스레드 종료(정리) 작업
+    """
     self.setup_thread()
     try:
-      print("situationDetector Main : 서비스의 모든 스레드를 시작합니다.")
+      print("situationDetector Main : 서비스의 수신 스레드를 시작합니다.")
       for t in self.threads:
         t.start()
       
@@ -288,16 +322,17 @@ class SituationDetector:
       while not self.shutdown_event.is_set():
         time.sleep(1)
     except KeyboardInterrupt:
-      print("situationDetector Main : 종료 신호 감지. 모든 스레드를 정리합니다.")
+      print("situationDetector Main : 종료 신호 감지. 모든 스레드를 정리")
+      self.shutdown_event.set()
     finally:
       self.stop()
     
   def stop(self):
     self.shutdown_event.set()
-    print("\nsituationDetector Main : 모든 스레드의 종료를 기다립니다...")
+    print("\nsituationDetector Main : 종료 신호를 감지. 모든 스레드 정리")
     for t in self.threads:
       t.join(timeout = 5) # 5초간 스레드가 종료되지 않으면 넘어감
-    print("situationDetector Main : 모든 스레드 종료. 프로그램을 종료합니다.")
+    print("situationDetector Main : 모든 스레드 종료. 프로그램 종료")
 
 if __name__ == "__main__":
   sd = SituationDetector()

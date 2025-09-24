@@ -3,7 +3,7 @@ import threading
 import time
 import queue
 
-from situationDetector.receiver.tcp_dm_receiver import receive_event_video
+from situationDetector.receiver.tcp_dm_event_video_receiver import receive_event_video
 from situationDetector.test_data.udp_dm_receiver import receive_video_udp
 
 from situationDetector.sender.tcp_main_sender import send_tcp_data_to_main
