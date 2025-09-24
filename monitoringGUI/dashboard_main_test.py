@@ -19,6 +19,7 @@ import re
 import json
 import socket
 import threading
+import struct  # 
 from queue import Queue
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
@@ -138,7 +139,9 @@ class AlertDialog(QDialog):
     def confirm_stop(self):
         if QMessageBox.question(self, "확인", "경고를 종료하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             # confirm_stop을 호출할 때 dialog 인스턴스(self)를 전달하도록 수정
+#================================= 연결고리 1 =============================
             self.parent_dashboard.resolve_alert(self, self.event_type)
+#================================= 연결고리 1 =============================
             self.accept()
 
 
@@ -153,63 +156,66 @@ class TcpReceiver(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.running = True
-        self.host = 'localhost'  # 수신할 호스트 주소
-        self.port = 2401          # 수신할 포트 번호
+
+        # [수정] 접속할 서버의 주소와 포트로 변경
+        self.server_host = '192.168.0.86'  # Server(situationDectector)의 IP
+        self.server_port = 2401           # Server(situationDectector)의 Result_JSON 수신 포트
 
     def run(self):
         """스레드가 시작될 때 실행되는 메인 루프"""
-        try:
-            # 서버 소켓 생성 및 설정
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # 주소 재사용 옵션 설정
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((self.host, self.port))
-            server_socket.listen(1)
-            # 타임아웃을 설정하여 self.running 플래그를 주기적으로 확인할 수 있게 함
-            server_socket.settimeout(1.0)
-            print(f"TCP Receiver listening on {self.host}:{self.port}")
+        while self.running:
+            try:
+                # [수정] 클라이언트 소켓 생성 및 서버에 연결 시도
+                print(f"Connecting to server {self.server_host}:{self.server_port}...")
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-            while self.running:
-                try:
-                    # 클라이언트 연결 대기
-                    client_socket, addr = server_socket.accept()
-                    with client_socket:
-                        print(f"Accepted connection from {addr}")
-                        full_data = b""
-                        while True:
-                            # 1024 바이트씩 데이터 수신
-                            data = client_socket.recv(1024)
-                            if not data:
-                                break
-                            full_data += data
+                client_socket.connect((self.server_host, self.server_port))
+                
+                print("Server connected.")
+                
+                # 연결이 성공하면, 연결이 끊길 때까지 계속 데이터 수신
+                with client_socket:
+                    full_data = b""
+                    while self.running:
+                        # 1024 바이트씩 데이터 수신
+                        data = client_socket.recv(1024)
+                        # 서버가 연결을 끊으면 data는 비어있게 됨
+                        if not data:
+                            print("Server disconnected.")
+                            break
+                        
+                        # [추가] 여러 JSON이 붙어서 오는 경우를 대비한 처리
+                        # 실제로는 데이터의 끝을 알리는 구분자(delimiter)가 필요하지만,
+                        # 여기서는 수신된 데이터를 바로 처리한다고 가정합니다.
+                        full_data += data
                         
                         # 수신된 데이터가 있으면 처리
                         if full_data:
                             try:
-                                # 수신된 바이트 데이터를 UTF-8 문자열로 디코딩
                                 json_str = full_data.decode('utf-8')
-                                # JSON 문자열을 파이썬 딕셔너리로 변환
                                 json_data = json.loads(json_str)
-                                # 파싱된 데이터를 시그널에 담아 발생시킴
                                 self.data_received.emit(json_data)
+                                full_data = b"" # 처리가 끝났으므로 버퍼 비우기
                             except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                                print(f"Error processing received data: {e}")
+                                # 아직 JSON 데이터가 완성되지 않았을 수 있으므로 오류 대신 계속 데이터를 받습니다.
+                                # print(f"Incomplete data received: {e}")
+                                pass
 
-                except socket.timeout:
-                    # 타임아웃 발생 시 루프를 계속 진행하여 self.running 상태를 확인
-                    continue
-                except Exception as e:
-                    print(f"TCP receiver error: {e}")
+            except ConnectionRefusedError:
+                # 서버가 닫혀있거나 연결을 거부할 경우
+                print("Connection refused. Retrying in 5 seconds...")
+                time.sleep(5)
+            except Exception as e:
+                # 그 외 다른 네트워크 오류
+                print(f"TCP client error: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
         
-        finally:
-            # 스레드 종료 시 서버 소켓 정리
-            server_socket.close()
-            print("TCP Receiver stopped.")
+        print("TCP Receiver (Client Mode) stopped.")
 
     def stop(self):
         """스레드를 안전하게 종료하기 위한 메서드"""
         self.running = False
-        print("Stopping TCP receiver thread...")
+        print("Stopping TCP client thread...")
 
 class VideoThread(QThread):
     # 프레임을 전달하기 위한 시그널 정의
@@ -322,10 +328,35 @@ class PatrolDashboard(QMainWindow):
         if os.path.exists("alert.mp3"):
             self.alert_sound = pygame.mixer.Sound("alert.mp3")
             self.alert_channel = pygame.mixer.Channel(0)
-        
+
+        self.event_to_code_map = {
+            "쓰러진 사람": 0,
+            "화재": 1,
+            "폭행": 2,
+            "실종자 발견": 3
+        }
+    
         self.tcp_receiver = TcpReceiver(self)
         self.tcp_receiver.data_received.connect(self.process_tcp_data)
         self.tcp_receiver.start()
+
+        # --- [추가] AI 모델의 영문 클래스 이름을 UI의 한글 이벤트 이름으로 변환하기 위한 딕셔너리 ---
+        self.class_name_map = {
+            # 화재 관련 이벤트
+            "detect_fire": "화재",
+            "detect_fire_danger_smoke": "화재",
+            "detect_fire_general_smoke": "화재",
+            
+            # 폭행 관련 이벤트 (예시)
+            "violence": "폭행",
+            
+            # 쓰러진 사람 관련 이벤트 (예시)
+            "fallen": "쓰러진 사람",
+            
+            # (필요에 따라 다른 AI 탐지 클래스 이름과 한글 이벤트 이름을 여기에 추가)
+        }
+
+
 
 
     def setupUi(self, MainWindow):
@@ -503,6 +534,10 @@ class PatrolDashboard(QMainWindow):
 
 
     def resolve_alert(self, dialog_to_remove, event_type):
+
+#============= --- 연결 고리 2 ----- [추가] 알람 종료 명령을 보내는 메서드 호출 ---
+        self.send_stop_alarm_command(event_type)
+#============= --- 연결 고리 2 -----=======================================        
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"<font color='green'>{timestamp} - {event_type} 상황 종료됨</font>"
         self.log_browser.append(log_message)
@@ -527,6 +562,38 @@ class PatrolDashboard(QMainWindow):
         if not alert_dialogs_open and self.alert_channel and self.alert_channel.get_busy():
             self.alert_channel.stop()
 
+        # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
+    def send_stop_alarm_command(self, event_type):
+        """monitoringGUI에서 situationDetector로 '알람 종료' 명령을 전송합니다."""
+        TARGET_IP = "192.168.0.86"
+        TARGET_PORT = 2401
+
+        SOURCE_ID = 4          # 보내는 곳: monitoringGUI (0x04)
+        DESTINATION_ID = 2     # 받는 곳: situationDetector (0x02)
+        COMMAND_STOP_ALARM = 1 # 명령: 알람 종료 (0x01)
+
+
+        alarm_type_code = self.event_to_code_map.get(event_type, 255)
+        if alarm_type_code == 255:
+            print(f"경고: {event_type}에 해당하는 알람 종료 코드를 찾을 수 없습니다.")
+            return
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2) 
+                sock.connect((TARGET_IP, TARGET_PORT))
+                
+                # [수정] 'BBBB': 4개의 unsigned char 형식으로 데이터를 패킹
+                payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
+                
+                sock.send(payload)
+                print(f"알람 종료 명령 전송 성공: {payload.hex()}")
+
+        except Exception as e:
+            print(f"알람 종료 명령 전송 실패: {e}")
+        # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
+
+
     def open_log_viewer(self):
         if self.log_viewer_dialog is None or not self.log_viewer_dialog.isVisible():
             self.log_viewer_dialog = LogViewerDialog(self, self.log_entries, self.event_colors)
@@ -534,52 +601,49 @@ class PatrolDashboard(QMainWindow):
         self.log_viewer_dialog.activateWindow()
 
     def process_tcp_data(self, json_data):
+        """수신된 TCP JSON 데이터를 처리하여 이벤트를 발생시키는 슬롯"""
         print("TCP 데이터 처리 시작:", json_data)
         timestamp = json_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        for detection in json_data.get("detection", []):
-            event_type = detection["class_name"]
-            confidence = detection["confidence"]
 
-        # event_type이 있는지 확인하여 하나의 명확한 이벤트로 처리
-        event_type = json_data.get("event_type")
-        
-        if event_type:
-            # '무단 투기' 이벤트에 대한 신뢰도는 관련 객체들의 평균 신뢰도 등으로 계산할 수 있습니다.
-            # 여기서는 예시로 고정값 또는 첫 번째 객체의 신뢰도를 사용합니다.
-            try:
-                confidence = json_data["detection"][0].get("confidence", 0.85)
-            except (IndexError, KeyError):
-                confidence = 0.85 # 기본 신뢰도
+        # 1. 'detection' 딕셔너리를 가져옵니다.
+        detection_features = json_data.get("detection", {})
 
-        #     self.trigger_event(event_type, confidence, is_auto=True)
-        # if self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
-        #     self.log_viewer_dialog.all_log_entries = self.log_entries
-        #     self.log_viewer_dialog.request_logs_from_server()
+        # 2. 딕셔너리 내부의 모든 값(탐지 결과 리스트)을 순회합니다.
+        #    (예: "feat_detect_fire" 리스트, "feat_detect_violence" 리스트 등)
+        for feature_results in detection_features.values():
+            # feature_results가 리스트 형태일 경우에만 처리
+            if isinstance(feature_results, list):
+                # 3. 각 탐지 결과 리스트 내부의 개별 객체를 순회합니다.
+                for detection in feature_results:
+                    # AI 모델이 보낸 영문 클래스 이름을 가져옵니다.
+                    eng_class_name = detection.get("class_name")
+                    
+                    # 4. __init__에서 정의한 맵을 사용해 한글 이벤트 이름으로 변환합니다.
+                    event_type = self.class_name_map.get(eng_class_name)
+                    
+                    # 5. 매핑된 한글 이벤트 이름이 있을 경우에만 로그/경고를 생성합니다.
+                    if event_type:
+                        confidence = detection.get("confidence", 0.0)
+                        # trigger_event를 호출하여 로그 기록, 팝업, 알람 등을 처리합니다.
+                        self.trigger_event(event_type, confidence, is_auto=True)
 
-           # trigger_event를 한 번만 호출하여 '무단 투기' 로그를 남깁니다.
-            self.trigger_event(event_type, confidence, is_auto=True)
-
-        # 로그 뷰어가 열려있을 경우, 새로운 로그를 반영하여 업데이트
+        # 로그 뷰어가 열려있을 경우, 새로운 로그를 반영하여 업데이트합니다.
         if self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
             self.log_viewer_dialog.all_log_entries = self.log_entries
             self.log_viewer_dialog.request_logs_from_server()
 
-    # def closeEvent(self, event):
-    #     print("Closing application...")
-    #     self.timer.stop()
-    #     for w in QApplication.topLevelWidgets():
-    #         if isinstance(w, QDialog):
-    #             w.close()
 
     # closeEvent 수정
     def closeEvent(self, event):
         print("Closing application...")
         # self.timer.stop() # 기존 타이머는 없으므로 삭제 또는 주석 처리
         self.thread.stop() # 비디오 스레드를 안전하게 종료
-        
+        self.tcp_receiver.stop()
+
         for w in QApplication.topLevelWidgets():
             if isinstance(w, QDialog):
                 w.close()
+
         print("Stopping TCP receiver thread...")
         self.tcp_receiver.stop()
         try:
@@ -592,11 +656,12 @@ class PatrolDashboard(QMainWindow):
             self.tcp_receiver.terminate()
         print("TCP thread stopped.")
         print("Releasing resources...")
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
+        # if self.cap and self.cap.isOpened():
+        #     self.cap.release()
         self.recorder.stop()
         pygame.mixer.quit()
         print("Resources released.")
+
         super().closeEvent(event)
 
 if __name__ == '__main__':
