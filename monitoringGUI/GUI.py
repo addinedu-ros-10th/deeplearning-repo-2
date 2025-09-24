@@ -121,11 +121,11 @@ class AlertDialog(QDialog):
         layout = QVBoxLayout(self)
         message = QLabel(f"{event_type} 감지됨! (확률: {prob:.2f})")
         layout.addWidget(message)
-        stop_button = QPushButton("상황 종료")
+        stop_button = QPushButton("확인")
         layout.addWidget(stop_button)
         stop_button.clicked.connect(self.confirm_stop)
     def confirm_stop(self):
-        if QMessageBox.question(self, "확인", "상황을 종료하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, "확인", "경고을 종료하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.parent_dashboard.resolve_alert(self.event_type)
             self.accept()
 
@@ -173,7 +173,7 @@ class LogViewerDialog(QDialog):
         self.video_display = QLabel("재생할 동영상을 선택하세요.")
         self.video_display.setFixedSize(640, 480)
         self.video_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_display.setStyleSheet("background-color: rgb(40, 40, 40); color: red;")
+        self.video_display.setStyleSheet("background-color: rgb(40, 40, 40); color: white;")
         self.video_display.setScaledContents(True) # 이미지가 라벨 크기에 맞게 조절되도록 설정
         
         video_layout.addWidget(self.video_display)
@@ -323,7 +323,7 @@ class LogViewerDialog(QDialog):
             message = entry['message']
             event_type = "정보" # 기본값
             # 정규식을 사용하여 대괄호 뒤의 첫 단어를 이벤트 종류로 간주
-            match = re.search(r"\]\s*([\w\s]+?)\s*(감지됨|상황 종료됨)", message)
+            match = re.search(r"\]\s*([\w\s]+?)\s*(감지 됨|확인 됨)", message)
             if match:
                 event_type = match.group(1).strip()
             
@@ -412,7 +412,7 @@ class LogViewerDialog(QDialog):
     def add_example_log(self):
         # 예시 데이터
         example_timestamp = "2025-09-19 18:02:25"
-        example_event_type = "움직임 감지"
+        example_event_type = "화재 감지"
         
         # 테이블의 가장 첫 번째 행(0번 인덱스)에 새로운 행을 삽입합니다.
         self.log_table.insertRow(0)
@@ -503,7 +503,7 @@ class PatrolDashboard(QMainWindow):
 
         if not self.cap.isOpened():
             QMessageBox.critical(self, "스트림 오류", f"비디오 스트림을 열 수 없습니다:\n{self.video_source}")
-            sys.exit() # 스트림 열기 실패 시 프로그램 종료
+            # sys.exit() # 스트림 열기 실패 시 프로그램 종료
 
         # 메인 타이머 설정: 30fps로 프레임 업데이트
         self.timer = QTimer(self)
@@ -511,7 +511,7 @@ class PatrolDashboard(QMainWindow):
         self.timer.start(1000 // 30)
 
         # 이벤트 유형별 색상 및 경고음 설정
-        self.event_colors = {"화재":"red", "폭행":"orange", "누워있는 사람":"yellow", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
+        self.event_colors = {"화재":"red", "폭행":"orange", "누워있는 사람":"purple", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
         if os.path.exists("alert.wav"):
             self.alert_sound = pygame.mixer.Sound("alert.wav")
             self.alert_channel = pygame.mixer.Channel(0)
@@ -524,7 +524,7 @@ class PatrolDashboard(QMainWindow):
 
 
     def setupUi(self, MainWindow):
-        MainWindow.setWindowTitle("AURA 관제 대시보드 (단일 화면)")
+        MainWindow.setWindowTitle("AURA 관제 대시보드")
         
         screen_rect = QApplication.primaryScreen().availableGeometry()
         MainWindow.showMaximized()
@@ -547,13 +547,13 @@ class PatrolDashboard(QMainWindow):
         self.control_layout = QVBoxLayout(control_panel)
         self.main_layout.addWidget(control_panel, 3) # 3의 비율을 할당
 
-        self.log_open_button = QPushButton("로그 뷰어 열기")
+        self.log_open_button = QPushButton("로그 뷰어 및 동영상 재생")
         self.control_layout.addWidget(self.log_open_button)
 
         trigger_groupbox = QGroupBox("수동 이벤트 발생")
         button_layout = QVBoxLayout(trigger_groupbox)
         self.trigger_buttons = {}
-        event_names = ["폭행", "화재", "누워있는 사람", "실종자", "무단 투기", "흡연자"]
+        event_names = ["폭행", "화재", "누워있는 사람", "실종자 발견", "무단 투기", "흡연자"]
         for name in event_names:
             btn = QPushButton(f"{name} 발생")
             self.trigger_buttons[name] = btn
@@ -579,18 +579,13 @@ class PatrolDashboard(QMainWindow):
             cv2.putText(frame, "NO SIGNAL", (450, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         else:
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            cv2.putText(frame, now_str, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(frame, now_str, (50, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.circle(frame, (30, 30), 10, (0, 0, 255), -1)
-            cv2.putText(frame, "REC", (50, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            # cv2.putText(frame, "REC", (50, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) # 녹화하지 않으므로 삭제
             self.recorder.write_frame(frame)
             self.frame_buffer.append(self.preprocess_frame(frame))
             self.frame_counter += 1
-            # if self.frame_counter >= 30:
-            #     if random.random() < 0.1:
-            #         self.run_inference(self.dumping_model, "무단 투기")
-            #     if random.random() < 0.1:
-            #         self.run_inference(self.smoker_model, "흡연자")
-            # self.frame_counter = 0
+
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format_RGB888)
@@ -612,8 +607,16 @@ class PatrolDashboard(QMainWindow):
         html_log = f"<font color='{color}'>{timestamp} - {log_message}</font>"
         self.log_browser.append(html_log)
         self.log_entries.append({"timestamp": timestamp, "message": log_message})
-        if event_type in ["폭행", "화재", "누워있는 사람"]:
-            if self.alert_sound and self.alert_channel and not self.alert_active:
+
+
+        if event_type in ["폭행", "화재", "누워있는 사람", "실종자 발견"]:
+            
+            if self.alert_sound and self.alert_channel:
+            # and not self.alert_active:
+                self.alert_channel.set_endevent(pygame.USEREVENT + 1)
+                pygame.time.set_timer(pygame.USEREVENT + 1, 5000, loops=1) # 5000ms = 5초
+                self.alert_channel.play(self.alert_sound)
+
                 self.alert_channel.play(self.alert_sound, loops=-1)
                 self.alert_active = True
             dialog = AlertDialog(self, event_type, prob)
@@ -622,18 +625,27 @@ class PatrolDashboard(QMainWindow):
             dialog.show()
 
     def place_alert_dialog(self, dialog):
-        screen_rect = QApplication.primaryScreen().geometry()
-        margin = 20
-        d_w, d_h = 300, 150
-        positions = {(d.pos().x(), d.pos().y()) for d in self.open_alerts if d is not dialog}
-        for r in range((screen_rect.height() - margin) // (d_h + margin)):
-            for c in range((screen_rect.width() - margin) // (d_w + margin)):
-                x = margin + c * (d_w + margin)
-                y = margin + r * (d_h + margin)
-                if (x, y) not in positions:
-                    dialog.move(x, y)
-                    return
-        dialog.move(margin, margin)
+        # 1. 기본 위치 및 간격 설정
+        start_pos = QPoint(60, 20)      # 첫 번째 팝업의 시작 위치
+        cascade_offset = QPoint(40, 40) # 같은 줄에서 대각선으로 이동할 간격
+        row_y_offset = 100               # 다음 줄로 넘어갈 때 추가할 y 간격
+        cascade_per_row = 10            # 한 줄에 표시할 최대 팝업 수
+
+        # 2. 현재 열려있는 팝업 수 확인
+        num_open_alerts = len(self.open_alerts) - 1
+
+        # 3. 현재 팝업의 행과 열 위치 계산
+        current_row = num_open_alerts // cascade_per_row
+        current_col = num_open_alerts % cascade_per_row
+
+        # 4. 최종 위치 계산
+        # 기본 시작 위치에서 (열 * 대각선 간격) 만큼 이동
+        new_pos = start_pos + (current_col * cascade_offset)
+        # 행이 바뀌었다면 (행 * 줄 간격) 만큼 y축으로 추가 이동
+        new_pos.setY(new_pos.y() + (current_row * row_y_offset))
+        
+        # 5. 다이얼로그를 계산된 위치로 이동
+        dialog.move(new_pos)
 
     def resolve_alert(self, event_type):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -687,17 +699,48 @@ class PatrolDashboard(QMainWindow):
             self.log_viewer_dialog.request_logs_from_server()
 
     def closeEvent(self, event):
+        print("Closing application...")
+        
+        # 1. 모든 타이머 중지
         self.timer.stop()
-        self.recorder.stop()
-        pygame.mixer.quit()
-        if self.cap:
-            self.cap.release()
+        
+        # 2. 모든 자식 다이얼로그 창 닫기
         for w in QApplication.topLevelWidgets():
             if isinstance(w, QDialog):
                 w.close()
+
+        # 3. 백그라운드 스레드 (TCP 서버) 안전하게 종료
+        print("Stopping TCP receiver thread...")
+        self.tcp_receiver.stop()
+        
+        # --- 스레드가 accept()에서 대기하는 것을 깨우기 위한 트릭 ---
+        try:
+            # 로컬호스트의 서버 소켓으로 임시 접속하여 accept() 대기 상태를 해제
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(('localhost', 2401))
+        except ConnectionRefusedError:
+            # 서버가 이미 닫히고 있는 경우 정상
+            pass
+        except Exception as e:
+            print(f"Error while trying to unblock TCP server: {e}")
+
 #=======    TCP     ===================================                
-        self.tcp_receiver.stop()  # TCP 수신 스레드 종료
-        self.tcp_receiver.wait()  # 스레드 완료 대기
+        self.tcp_receiver.wait(2000) # 스레드가 종료될 때까지 최대 2초 대기
+        if self.tcp_receiver.isRunning():
+            print("TCP thread is still running, terminating...")
+            self.tcp_receiver.terminate() # 최후의 수단으로 강제 종료
+
+        print("TCP thread stopped.")
+        
+        # 4. OpenCV 및 Pygame 리소스 해제
+        print("Releasing resources...")
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+        self.recorder.stop()
+        pygame.mixer.quit()
+        print("Resources released.")
+
+        # 5. 부모 클래스의 closeEvent 호출하여 창 닫기 완료
         super().closeEvent(event)
 #=======    TCP     ===================================                
 
@@ -707,14 +750,3 @@ if __name__ == '__main__':
     window = PatrolDashboard()
     window.show()
     sys.exit(app.exec())
-
-
-
-
-
-
-
-
-
-
-
