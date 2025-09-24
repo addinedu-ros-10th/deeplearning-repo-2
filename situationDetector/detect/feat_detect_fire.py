@@ -1,6 +1,3 @@
-"""
-공유 큐에서 프레임을 가져와 YOLO 객체를 탐지하고 결과를 화면에 표시하는 데모 함수 파일
-"""
 import cv2
 import json
 import time
@@ -10,21 +7,25 @@ from ultralytics import YOLO
 
 FIRE_MODEL_PATH = "situationDetector/detect/feat_detect_fire/best.pt"
 
-
 def run_fire_detect(analysis_frame_queue: queue.Queue, 
                     aggregation_queue :queue.Queue,     # 취합 큐
                     analyzer_name : str,                # 모델 이름
                     shutdown_event: threading.Event):
+  """
+  1. analysis_frame_queue에서 1 프레임 가져옴 (get)
+    - (frame_count, frame_time, frame) : (프레임 카운트, 프레임 시간, 프레임 원본 데이터)
+  2. YOLO 실행
+    - results = model(frame, verbose=False)
+  3. 결과 데이터 results에서 필요한 데이터 추출하여 6가지 기능 AI_JSON Schema, RawData_JSON Schema에 맞는 형식 생성
+    - detection_data = {
+        
+      }
+    - result_package = {
+      
+      }
+  4. aggregation_queue에 데이터 추가 작업 put(result_package)
+  """
   print("situationDetector (YOLO) : YOLO 스레드 시작, 모델 로드")
-  """
-  result_package = {
-    "timestamp" :
-    "analyzer_name" :
-    "detection" :
-    "detection_count" :
-    "patrol_number" :
-  }
-  """
   
   model = YOLO(FIRE_MODEL_PATH)
   
@@ -32,7 +33,7 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
   while not shutdown_event.is_set():
     try:
       # 큐에서 프레임을 가져오고, timeout을 설정하여 blocking방지 및 종료신호 확인
-      frame_count, frame = analysis_frame_queue.get(timeout=1.0)
+      frame_count, frame_time, frame = analysis_frame_queue.get(timeout=1.0)
       
       # 현재 프레임 카운트 정보가 없으면 처리하지 않음
       if not frame_count:
@@ -41,39 +42,53 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
       # YOLO 실행
       results = model(frame, verbose=False)
       
+      detection_list = []
       
-      # result_package = {
-      #   "timestamp" : 
-      #   "analyzer_name" :
-      #   "detection" :
-      #   "detection_count" :
-      #   "patrol_number" :
-      # }
-      
-      # # 분석한 결과 데이터를 취합 큐에 추가
-      # current_timestamp = None
-      # current_patrol_car = None
-      # with metadata_lock:
-      #     current_timestamp = shared_metadata.get("timestamp")
-      #     current_patrol_car = shared_metadata.get("patrol_car_name")
+      # 감지된 모든 객체 (results[0].boxes의 모든 객체를 detection에 저장)
+      for box in results[0].boxes.data:
+        # 텐서값 -> 파이썬 데이터 값
+        x1, y1, x2, y2, conf, cls = box
+        
+        class_name = None
+        if int(cls) == 0:
+          class_name = "detect_fire"
+        if int(cls) == 1:
+          class_name = "detect_fire_danger_smoke"
+        if int(cls) == 2:
+          class_name = "detect_fire_general_smoke"
 
-      # if current_timestamp and current_patrol_car:
-      #     json_output = generateDetectJsonDump(results, current_timestamp, current_patrol_car)
-      #     try:
-      #         aggregation_queue.put(json_output, block=False)
-      #     except queue.Full:
-      #         print("situationDetector (YOLO) : DB 큐가 가득 참 / 분석 결과 버립")
+        if not class_name:
+          print(f"situationDetector (YOLO) : 모델 클래스 오류 발생")
+        
+        detection_data = {
+          "class_id": int(cls),                    ## 화재감지 이벤트 ID
+          "class_name": class_name,      ## 화재 감지 이벤트
+          "confidence": float(conf),                 ## detection 신뢰도
+          "bbox": {                         ## Box 표기 위치
+            "x1": float(x1),
+            "y1": float(y1),
+            "x2": float(x2),
+            "y2": float(y2),
+          }
+        }
+        detection_list.append(detection_data)
       
+      result_package = {
+        "detection" : detection_list, # 감지된 객체 정보 리스트 추가
+        "timestamp" : frame_time,
+        "analyzer_name" : analyzer_name,
+        "detection_count" : len(detection_list), # 감지된 객체의 수
+        "patrol_number" : 1
+      }
       
+      print(result_package)
       
-      # # 시각화 부분 (필요시 주석 해제)
-      # annotated_frame = results[0].plot()
-      # cv2.imshow("Detector test", annotated_frame)
-      # if cv2.waitKey(1) & 0xFF == 27:
-      #   print("situationDetector (YOLO) : 종료 키 입력 감지. 종료 신호를 보냅니다.")
-      #   shutdown_event.set()
-      #   break
-
+      try:
+        # aggregation_queue 추가 타입 : json
+        aggregation_queue.put(result_package)
+      except queue.Full:
+        print("situationDetector (YOLO) : DB 큐가 가득 참 / 분석 결과 버립")
+      
     except queue.Empty:
       # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
       continue
@@ -83,58 +98,3 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
   
   cv2.destroyAllWindows()
   print("situationDetector (YOLO) : YOLO 스레드 종료")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def generateDetectJsonDump(result, time, patrol_car_name):
-  """
-  DB Server에 보낼 json 데이터 생성
-  프레임 해석 정보와 기본 정보 (영상 메타데이터 : 시간, 위치, 순찰차 이름)을 인자로 받아 새로운 json 데이터 생성
-  """  
-  detection_count = 0 # 감지한 객체수 정보
-  detections_list = []
-  
-  # 1. 감지된 객체가 있는 경우에 감지 갯수(detection_count)에 추가
-  if result[0].boxes is not None:
-    detection_count = len(result[0].boxes)
-    
-    # 2. 객체 상세정보 추가
-    for box in result[0].boxes:
-      class_id = int(box.cls)
-      detection_info = {
-        "class_id" : class_id,                        # 객체 ID
-        "class_name" : result[0].names[class_id],     # 객체 이름
-        "detect_count" : detection_count,
-        "confidence" : float(box.conf),               # confidence 값
-        "box_xyxy" : box.xyxy.cpu().numpy().tolist(), # Bounding Box 좌표
-      }
-      detections_list.append(detection_info)
-  
-  transform = {
-    "timestamp" : time, # 영상 메타데이터 : 순찰차 영상 촬영 시각
-    "patrol_car_name" : patrol_car_name, # 영상 메타데이터 : 순찰차 이름
-    "boxes" : detections_list,
-  }
-  str_data = json.dumps(transform, ensure_ascii=False)
-  return str_data.encode('utf-8') # str 바이트 데이터로 변환하여 return
