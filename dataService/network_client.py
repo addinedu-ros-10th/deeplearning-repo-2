@@ -4,7 +4,7 @@ import json
 
 # --- 접속할 서버 정보 ---
 SERVER_HOST = '127.0.0.1'
-SERVER_PORT = 8800
+SERVER_PORT = 9999
 
 def fetch_logs_from_network(request_payload):
     """

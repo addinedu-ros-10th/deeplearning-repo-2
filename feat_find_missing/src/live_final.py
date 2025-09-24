@@ -1,4 +1,4 @@
-# live_match_multi_refactored.py
+# live_match_multi_refactored.py (bbox 좌표 반환 기능 추가)
 import cv2
 import numpy as np
 import torch
@@ -31,7 +31,7 @@ class Config:
 
 # ====== 유틸리티 함수 (변경 없음) ======
 def l2n(x, eps=1e-9):
-    x = x.astype(np.float32, copy=False)
+    x = x.astype(np.float32, copy=False)    
     n = np.linalg.norm(x)
     return x if n < eps else x / n
 
@@ -135,7 +135,8 @@ def infer_once(frame: np.ndarray) -> list[dict]:
                 "name": name,
                 "birthday": birthday,
                 "mask_type": match_type,
-                "confidence": best_sim
+                "confidence": best_sim,
+                "bbox": [int(x1), int(y1), int(x2), int(y2)] # ★★★ 수정된 부분 ★★★
             })
             
             # (시각화)
