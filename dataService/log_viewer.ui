@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LogViewerDialog</class>
+ <widget class="QDialog" name="LogViewerDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1280</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>로그 뷰어 및 동영상 재생</string>
+  </property>
+  <layout class="QHBoxLayout" name="horizontalLayout">
+   <item>
+    <widget class="QSplitter" name="main_splitter">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <widget class="QWidget" name="video_panel" native="true">
+      <layout class="QVBoxLayout" name="video_layout">
+       <item>
+        <widget class="QLabel" name="video_display">
+         <property name="minimumSize">
+          <size>
+           <width>640</width>
+           <height>480</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">background-color: rgb(40, 40, 40); color: white;</string>
+         </property>
+         <property name="text">
+          <string>재생할 동영상을 선택하세요.</string>
+         </property>
+         <property name="scaledContents">
+          <bool>true</bool>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="control_panel" native="true">
+      <layout class="QVBoxLayout" name="control_layout" stretch="0,1,0">
+       <item>
+        <widget class="QGroupBox" name="search_groupbox">
+         <property name="title">
+          <string>검색 조건</string>
+         </property>
+         <layout class="QGridLayout" name="search_layout">
+          <item row="1" column="1">
+           <widget class="QDateEdit" name="end_date_edit">
+            <property name="calendarPopup">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QDateEdit" name="start_date_edit">
+            <property name="calendarPopup">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QComboBox" name="orderby_combo">
+            <item>
+             <property name="text">
+              <string>최신순</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>오래된 순</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>종료일:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string>시작일:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>정렬:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0" colspan="2">
+           <widget class="QPushButton" name="search_button">
+            <property name="text">
+             <string>로그 검색</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0" colspan="2">
+           <widget class="QGroupBox" name="event_groupbox">
+            <property name="title">
+             <string>이벤트 종류</string>
+            </property>
+            <layout class="QGridLayout" name="event_layout">
+             <item row="0" column="0">
+              <widget class="QCheckBox" name="cb_fire">
+               <property name="text">
+                <string>화재</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QCheckBox" name="cb_assault">
+               <property name="text">
+                <string>폭행</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="0">
+              <widget class="QCheckBox" name="cb_fallen">
+               <property name="text">
+                <string>누워있는 사람</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QCheckBox" name="cb_missing">
+               <property name="text">
+                <string>실종자</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="0">
+              <widget class="QCheckBox" name="cb_dumping">
+               <property name="text">
+                <string>무단 투기</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="QCheckBox" name="cb_smoking">
+               <property name="text">
+                <string>흡연자</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="log_table">
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+         <property name="sortingEnabled">
+          <bool>true</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>발생 시각</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>이벤트 종류</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>영상 재생</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="pagination_layout">
+         <item>
+          <spacer name="horizontalSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="prev_button">
+           <property name="text">
+            <string>이전</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="page_label">
+           <property name="text">
+            <string>1 / 1</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="next_button">
+           <property name="text">
+            <string>다음</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer_2">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

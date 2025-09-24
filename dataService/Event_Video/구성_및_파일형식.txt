@@ -1,0 +1,20 @@
+-TCP 소켓: 연결형, 순서/재전송 보장 → 파일 전송에 적합.
+길이 정보(바이트 수)를 먼저 보내고, 서버는 그만큼 읽어 저장(“길이-프리픽스 프로토콜”).
+-HTTP + JSON: TCP 위에서 돌아가는 표준 API 방식. FastAPI로 손쉽게 구현.
+-멱등성(Idempotency): 같은 이벤트를 여러 번 보내도 1건만 남게 event_id 고정 + UPSERT.
+-무결성: 파일이 온전히 도착했는지 SHA-256 해시로 확인해 DB에 기록.
+-경로 규칙: 폴더 이름/파일 이름을 서버가 결정해 돌려주면, 모든 클라이언트가 같은 규칙을 따를 수 있음.
+
+
+Event_Video/
+└── Patrol_Car_1/
+    ├── Smoke_Event/
+    ├── Fire_Event/
+    ├── Crime_Event/
+    ├── Trash_Event/
+    ├── Faint_Event/
+    └── Missing_Event/
+└── Patrol_Car_2/
+    └── ...
+파일명: YYYY-MM-DD_HH_MM_SS.mp4
+
