@@ -8,8 +8,6 @@ import pygame
 from Tcp_client_manager import Tcp_client_manager
 import struct
 import sys
-import pickle
-import multiprocessing
 
 class deviceManager(Tcp_client_manager):
     def __init__(self):
@@ -79,7 +77,6 @@ class deviceManager(Tcp_client_manager):
             if self.alarm == 0:
                 print("None")
                 continue
-
             elif self.alarm == 1:
                 alarm = pygame.mixer.Sound(self.file_path+'/embedmediaStorage/fire.mp3')
                 print("화재용 LED")
@@ -98,7 +95,11 @@ class deviceManager(Tcp_client_manager):
             if (sound.get_busy()):
                 pass
             else:
-                sound.play(alarm)
+                if self.alarm == 1 or self.alarm == 2:
+                    sound.play(alarm)
+                else:
+                    sound.play(alarm)
+                    time.sleep(30)
             time.sleep(0.1)
 
     def media_init(self):
