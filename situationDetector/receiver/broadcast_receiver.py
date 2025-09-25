@@ -8,7 +8,6 @@ def receive_cv_video(analyzer_input_queue : List[queue.Queue],
                     shutdown_event : threading.Event):
   # Create a VideoCapture object. 0 refers to the default webcam.
   # If you have multiple webcams, you might need to try 1, 2, etc.
-  # cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
   cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
   # cap = cv2.VideoCapture("http://192.168.0.149:5000/stream?src=0")
 
@@ -32,12 +31,21 @@ def receive_cv_video(analyzer_input_queue : List[queue.Queue],
 
     frame_count += 1
     frame_time = time.time()
+    
+    # 데이터를 딕셔너리 형태로 패키징
+    data_packet = {
+      "frame" : frame,
+      "frame_count" : frame_count,
+      "frame_time" : frame_time,
+      "patrol_number" : 0x00,
+    }
+    
 
     # analyzer_input_queue에 프레임 저장
     for q in analyzer_input_queue:
       if q.full():
         q.get() # 큐가 꽉 차있으면 이전 프레임을 버리고 새 것으로 교체 작업
-      data_packet = (frame_count, frame_time, frame)
+      # data_packet = (frame_count, frame_time, frame)
       q.put(data_packet)
 
     # Display the captured frame

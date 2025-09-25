@@ -9,7 +9,7 @@ import time
 import struct
 
 # 통신 설정
-TCP_HOST = 'localhost'  # situationDetector 자신의 IP 주소
+TCP_HOST = '192.168.0.86'  # situationDetector 자신의 IP 주소
 TCP_PORT = 1201         # deviceManager와 통신할 단일 포트
 
 # 수신 데이터 헤더 정보
@@ -21,7 +21,7 @@ TEST_DATA_FIRE = b'\x02\x01\x01\x01'
 
 def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Queue, shutdown_event: threading.Event):
     """
-    하나의 deviceManager 클라이언트로부터 데이터를 지속적으로 수신하는 스레드.
+    deviceManager 클라이언트로부터 영상 메타데이터 / 30초 이벤트 영상 수신
     주요 기능: 30초 이벤트 영상 수신
     """
     print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신 스레드 시작")
@@ -32,6 +32,8 @@ def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Q
             if not header_data:
                 print(f"situationDetector (TCP dM Communicator) : [{addr}] 클라이언트 연결 끊어짐.")
                 break
+            
+            print(header_data)
             
             # 2. 헤더 언패킹
             unpacked_header = struct.unpack(HEADER_FORMAT, header_data)
@@ -79,7 +81,7 @@ def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Q
     finally:
         print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신 스레드 종료.")
 
-def _handle_send(conn: socket.socket, addr: tuple, dm_event_queue: queue.Queue, shutdown_event: threading.Event):
+def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Queue, shutdown_event: threading.Event):
     """
     하나의 deviceManager 클라이언트에 데이터를 지속적으로 송신하는 스레드.
     주요 기능: 분석에 따른 이벤트 발생 데이터(알람 등) 전송
@@ -88,14 +90,60 @@ def _handle_send(conn: socket.socket, addr: tuple, dm_event_queue: queue.Queue, 
     try:
         while not shutdown_event.is_set():
             try:
-                # TODO: 실제 운영 시에는 아래 주석 처리된 코드를 사용하여 dm_event_queue에서 데이터를 가져와 전송해야 합니다.
-                # event_data = dm_event_queue.get(timeout=1.0)
-                # conn.sendall(event_data)
-                # print(f"situationDetector (TCP dM Communicator) : [{addr}] 데이터 전송 완료 ({len(event_data)} bytes)")
+                # 결과 데이터 해석
+                # 결과 데이터 형식 (예시)
+                '''
+                {'detection': 
+                    {'feat_detect_fire': 
+                        [
+                            {
+                                'class_id': 2, 
+                                'class_name': 'detect_fire_general_smoke', 
+                                'confidence': 0.25313425064086914, 
+                                'bbox': {
+                                    'x1': 74.0595703125, 
+                                    'y1': 0.23963546752929688, 
+                                    'x2': 605.1390380859375, 
+                                    'y2': 35.71662902832031
+                                }
+                            }, 
+                            {
+                                'detection_count': 1
+                            }
+                        ]
+                    }, 
+                    'timestamp': None, 
+                    'patrol_number': 0
+                }
+                '''
+                # (situationDetector) -> (deviceManager)
+                event = final_output_queue.get(timeout=1.0)
+                # 1. 고정값 정의
+                SOURCE = 0x02
+                DESTINATION = 0x01
+                
+                # patrol_number = int(event['patrol_number'])
+                patrol_number = 1
+                alarm_type = 0 # 이벤트 없음
+                
+                # 이벤트 우선 순위 : fire -> smoke -> ....
+                
+                # event 딕셔너리에 'detection' 내용이 있는지 확인
+                if event.get('detection'):
+                    detection_data = event['detection']
+                    if 'feat_detect_fire' in detection_data:
+                        alarm_type = 1 # 화재 경고
+                    elif 'feat_detect_assault' in detection_data: # 폭행 감지 키(가정)
+                        alarm_type = 2 # 폭행 경고
+                    elif 'feat_detect_littering' in detection_data: # 무단투기 감지 키(가정)
+                        alarm_type = 3 # 무단투기 경고
+                
+                data_packet = struct.pack('>BBBB', SOURCE, DESTINATION, patrol_number, alarm_type)
+                
+                print(data_packet)
+                print(event)
 
-                # 테스트용 코드: 15초마다 화재 경고 데이터 전송 (기존 tcp_dm_event_sender.py 로직)
-                time.sleep(15) 
-                conn.sendall(TEST_DATA_FIRE)
+                conn.send(data_packet)
                 print(f"situationDetector (TCP dM Communicator) : [{addr}] 테스트 데이터 전송 완료 ({len(TEST_DATA_FIRE)} bytes)")
 
             except queue.Empty:
@@ -110,13 +158,50 @@ def _handle_send(conn: socket.socket, addr: tuple, dm_event_queue: queue.Queue, 
     finally:
         print(f"situationDetector (TCP dM Communicator) : [{addr}] 송신 스레드 종료.")
 
-def dm_communicator_server(event_video_queue: queue.Queue,
-                          dm_event_queue: queue.Queue,
-                          shutdown_event: threading.Event):
+def dm_server_run(event_video_queue: queue.Queue,
+                        final_output_queue: queue.Queue,
+                        shutdown_event: threading.Event):
     """
     deviceManager 클라이언트의 연결을 수락하고,
     각 클라이언트에 대해 양방향 통신(수신/송신) 스레드를 생성 및 관리.
     """
+    # time.sleep(10)
+    # event = final_output_queue.get(timeout=1.0)
+    # print(event)
+    
+    # ------
+    # time.sleep(10)
+    # try:
+    #         # (situationDetector) -> (deviceManager)
+    #     event = final_output_queue.get(timeout=1.0)
+    #     # 1. 고정값 정의
+    #     SOURCE = 0x02
+    #     DESTINATION = 0x01
+        
+    #     patrol_number = int(event['patrol_number'])
+    #     alarm_type = 0 # 이벤트 없음
+        
+    #     # 이벤트 우선 순위 : fire -> smoke -> ....
+        
+    #     # event 딕셔너리에 'detection' 내용이 있는지 확인
+    #     if event.get('detection'):
+    #         detection_data = event['detection']
+    #         if 'feat_detect_fire' in detection_data:
+    #             alarm_type = 1 # 화재 경고
+    #         elif 'feat_detect_assault' in detection_data: # 폭행 감지 키(가정)
+    #             alarm_type = 2 # 폭행 경고
+    #         elif 'feat_detect_littering' in detection_data: # 무단투기 감지 키(가정)
+    #             alarm_type = 3 # 무단투기 경고
+        
+    #     data_packet = struct.pack('>BBBB', SOURCE, DESTINATION, patrol_number, alarm_type)
+        
+    #     print(data_packet)
+    # except queue.Empty:
+    #     # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
+    #     print("EMPTY!")
+    
+    # -----
+    
     server_sock = None
     while not shutdown_event.is_set():
         try:
@@ -138,7 +223,7 @@ def dm_communicator_server(event_video_queue: queue.Queue,
 
                     # 3. 연결된 클라이언트를 위한 수신/송신 스레드 생성 및 시작
                     receiver = threading.Thread(target=_handle_receive, args=(conn, addr, event_video_queue, shutdown_event))
-                    sender = threading.Thread(target=_handle_send, args=(conn, addr, dm_event_queue, shutdown_event))
+                    sender = threading.Thread(target=_handle_send, args=(conn, addr, final_output_queue, shutdown_event))
                     receiver.daemon = True
                     sender.daemon = True
                     receiver.start()

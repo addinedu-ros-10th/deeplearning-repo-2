@@ -16,10 +16,10 @@ TCP_PORT = 2401             # situationDetector TCP 수신 포트 : 1201
 
 """
 (situationDetector) -> (deviceManager) Binary Interface
-Source          : uint8_t : I
-Destination     : uint8_t : I
-call_command    : uint8_t : I
-Alarm type      : uint8_t : I # 해당 타입의 알람 무시
+Source          : uint8_t : B
+Destination     : uint8_t : B
+call_command    : uint8_t : B
+Alarm type      : uint8_t : B # 해당 타입의 알람 무시
 
 
 GUI로부터 알람 해제 요청이 있는 경우, 30초동안 경고 방송을 해지함 (감지된 데이터 무시)
@@ -27,7 +27,7 @@ GUI로부터 알람 해제 요청이 있는 경우, 30초동안 경고 방송을
 HEADER_FORMAT = "BBBB"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
-def receive_clear_event(event_clear_queue : queue.Queue,
+def gui_server_run(event_clear_queue : queue.Queue,
                     shutdown_event : threading.Event):
     """
     TCP 클라이언트의 연결을 수락하고 30초 이벤트 영상 메타데이터를 수신
@@ -52,7 +52,6 @@ def receive_clear_event(event_clear_queue : queue.Queue,
                     with conn:
                         print(f"situationDetector (TCP, gui_event_clear) : 클라이언트 연결됨: {addr}")
                         while not shutdown_event.is_set():
-                            print("TEST1")
                             # 3. 고정 크기의 헤더 수신
                             header_data = conn.recv(HEADER_SIZE)
                             
@@ -62,50 +61,66 @@ def receive_clear_event(event_clear_queue : queue.Queue,
                             
                             # 4. 헤더 언패킹 및 json 형태로 변환
                             unpacked_header = struct.unpack(HEADER_FORMAT, header_data)
-                            video_shared_metadata = { # I I I I
+                            video_shared_metadata = { # B B B B
                                 "source": unpacked_header[0],
                                 "destination" : unpacked_header[1],
                                 "call_command" : unpacked_header[2],
                                 "alarm_type" : unpacked_header[3],
                             }
                             
-                            # 5. 헤더 데이터 검증
-                            sig = True # 헤더 데이터 검증 시그널
-                            if unpacked_header[0] != 0x02:
-                                sig = False
-                            elif unpacked_header[1] != 0x01:
-                                sig = False
-                            elif unpacked_header[2] != 0x01:
-                                sig = False
-                            elif unpacked_header[3] < 0x00 and unpacked_header[3] > 0x04:
-                                sig = False                            
+                            # # 5. 헤더 데이터 검증
+                            # sig = True # 헤더 데이터 검증 시그널
+                            # if unpacked_header[0] != 0x04:
+                            #     sig = False
+                            # elif unpacked_header[1] != 0x02:
+                            #     sig = False
+                            # elif unpacked_header[2] != 0x01:
+                            #     sig = False
+                            # elif unpacked_header[3] < 0x00 or unpacked_header[3] > 0x04:
+                            #     sig = False                            
                             
-                            print(video_shared_metadata)
-                            print(sig)
+                            # print(f"situationDetector (TCP, gui_event_clear) : 수신 데이터: {unpacked_header}") # 로깅 추가
+                            
+                            # 5. 헤더 데이터 검증 (필요시 활성화)
+                            sig = True 
+                            if unpacked_header[0] != 0x04: sig = False
+                            elif unpacked_header[1] != 0x02: sig = False
+                            elif unpacked_header[2] != 0x01: sig = False
+                            elif unpacked_header[3] > 0x04: sig = False                            
                             
                             if not sig:
-                                print(f"situationDetector (TCP, gui_event_clear) : GUI 이벤트 해제 요청 헤더 데이터 오류: {e}")
-                            event_clear_queue.put(video_shared_metadata)
+                                print(f"situationDetector (TCP, gui_event_clear) : GUI 이벤트 해제 요청 헤더 데이터 오류: {unpacked_header}")
+                                continue # 잘못된 데이터는 무시하고 다음 수신 대기
+
+                            
+                            # print(unpacked_header)
+                            print(video_shared_metadata)
+                            print("데이터 검증 : ", sig)
+                            
+                            # if not sig:
+                            #     print(f"situationDetector (TCP, gui_event_clear) : GUI 이벤트 해제 요청 헤더 데이터 오류: {e}")
+                            # event_clear_queue.put(video_shared_metadata)
+                            
                             
                 except socket.timeout:
                     # 타임아웃은 정상적인 상황이므로 루프를 계속 진행
                     continue
-                except Exception as e:
-                    print(f"situationDetector (TCP, gui_event_clear) : 서버 오류: {e}")
+                except Exception as e1:
+                    print(f"situationDetector (TCP, gui_event_clear) : 서버 오류: {e1}")
                     break
-        # 소켓 생성 / 바인딩 오류 처리
-        except Exception as e:
-            print(f"situationDetector (TCP, gui_event_clear) : 서버 준비 중 오류 발생 {e}")
+            # 소켓 생성 / 바인딩 오류 처리
+        except Exception as e2:
+            print(f"situationDetector (TCP, gui_event_clear) : 서버 준비 중 오류 발생 {e2}")
 
         # 소켓,연결 정리
-        finally:
-            if conn:
-                conn.close()
-            if server_sock:
-                server_sock.close()
-            # 오류 발생 시 대기 후 재시도
-            if not shutdown_event.is_set():
-                print("situationDetector (TCP, gui_event_clear) : 오류 발생, 5초 후 서버 재시작을 시도합니다.")
-                time.sleep(5)
+        # finally:
+        if conn:
+            conn.close()
+        if server_sock:
+            server_sock.close()
+        # 오류 발생 시 대기 후 재시도
+        if not shutdown_event.is_set():
+            print("situationDetector (TCP, gui_event_clear) : 오류 발생, 5초 후 서버 재시작을 시도합니다.")
+            time.sleep(5)
 
     print("situationDetector (TCP, gui_event_clear) : 수신 스레드를 종료합니다.")

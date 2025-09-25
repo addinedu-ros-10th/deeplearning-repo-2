@@ -9,6 +9,7 @@ import socket
 import struct
 import threading
 
+# TCP_HOST = 'localhost'  
 TCP_HOST = '192.168.0.86'  
 TCP_PORT = 2401             # GUI TCP 수신 포트 : 2401
 
