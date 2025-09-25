@@ -19,6 +19,7 @@ import re
 import json
 import socket
 import threading
+import select  # 소켓의 상태를 확인하기 위해 필요
 import struct  # 
 from queue import Queue
 
@@ -153,62 +154,86 @@ class TcpReceiver(QThread):
     """
     data_received = Signal(dict)  # 수신된 데이터를 담아 보낼 시그널 (dict 타입)
 
-    def __init__(self, parent=None):
+    # --- [전체 교체] command_queue를 인자로 받도록 수정 ---
+    def __init__(self, command_queue, parent=None):
         super().__init__(parent)
         self.running = True
+        self.server_host = '192.168.0.86'
+        self.server_port = 2401
+        self.command_queue = command_queue # 공유 큐를 멤버 변수로 저장
+    # --- [전체 교체] ---
+    # def __init__(self, parent=None):
+    #     super().__init__(parent)
+    #     self.running = True
 
-        # [수정] 접속할 서버의 주소와 포트로 변경
-        self.server_host = '192.168.0.86'  # Server(situationDectector)의 IP
-        self.server_port = 2401           # Server(situationDectector)의 Result_JSON 수신 포트
+    #     # [수정] 접속할 서버의 주소와 포트로 변경
+    #     self.server_host = '192.168.0.86'  # Server(situationDectector)의 IP
+    #     self.server_port = 2401           # Server(situationDectector)의 Result_JSON 수신 포트
 
     def run(self):
         """스레드가 시작될 때 실행되는 메인 루프"""
         while self.running:
+            client_socket = None # 소켓 변수 초기화[추가]
             try:
                 # [수정] 클라이언트 소켓 생성 및 서버에 연결 시도
                 print(f"Connecting to server {self.server_host}:{self.server_port}...")
                 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
                 client_socket.connect((self.server_host, self.server_port))
-                
                 print("Server connected.")
                 
-                # 연결이 성공하면, 연결이 끊길 때까지 계속 데이터 수신
-                with client_socket:
-                    full_data = b""
-                    while self.running:
-                        # 1024 바이트씩 데이터 수신
-                        data = client_socket.recv(1024)
-                        # 서버가 연결을 끊으면 data는 비어있게 됨
-                        if not data:
-                            print("Server disconnected.")
-                            break
-                        
-                        # [추가] 여러 JSON이 붙어서 오는 경우를 대비한 처리
-                        # 실제로는 데이터의 끝을 알리는 구분자(delimiter)가 필요하지만,
-                        # 여기서는 수신된 데이터를 바로 처리한다고 가정합니다.
-                        full_data += data
-                        
-                        # 수신된 데이터가 있으면 처리
-                        if full_data:
-                            try:
-                                json_str = full_data.decode('utf-8')
-                                json_data = json.loads(json_str)
-                                self.data_received.emit(json_data)
-                                full_data = b"" # 처리가 끝났으므로 버퍼 비우기
-                            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                                # 아직 JSON 데이터가 완성되지 않았을 수 있으므로 오류 대신 계속 데이터를 받습니다.
-                                # print(f"Incomplete data received: {e}")
-                                pass
+                full_data = b""
 
-            except ConnectionRefusedError:
-                # 서버가 닫혀있거나 연결을 거부할 경우
-                print("Connection refused. Retrying in 5 seconds...")
+                # 연결이 성공하면, 연결이 끊길 때까지 계속 데이터 수신/송신
+                while self.running:
+                    # select를 사용해 읽기/쓰기 가능 상태를 0.1초 타임아웃으로 확인
+                    # 읽을 수 있는 소켓 목록, 쓸 수 있는 소켓 목록, 에러난 소켓 목록을 반환
+                    readable, writable, _ = select.select([client_socket], [client_socket], [], 0.1)
+
+                    # 1) 데이터 수신 처리 (소켓을 '읽기'가 가능할 때)
+                    if client_socket in readable:
+                        data = client_socket.recv(1024)
+                        if not data:
+                            print("서버 연결 끊김.")
+                            break # 내부 루프 탈출
+                        
+                        full_data += data
+                        try:
+                            json_str = full_data.decode('utf-8')
+                            json_data = json.loads(json_str)
+                            self.data_received.emit(json_data)
+                            full_data = b""
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            # 데이터가 아직 완성되지 않은 경우, 다음 recv를 위해 대기
+                            pass
+
+                    # 2) 데이터 송신 처리 (소켓에 '쓰기'가 가능하고, 보낼 명령이 큐에 있을 때)
+                    if client_socket in writable and not self.command_queue.empty():
+                        try:
+                            # 큐에서 보낼 데이터를 꺼냄 (block 없이 바로)
+                            command_to_send = self.command_queue.get_nowait()
+                            client_socket.sendall(command_to_send)
+                            print(f"큐의 명령을 서버로 전송 완료: {command_to_send.hex()}")
+                        except Queue.Empty:
+                            # 큐 확인과 get 사이에 다른 스레드가 데이터를 가져간 경우를 대비
+                            pass
+
+            except Exception as e:
+                print(f"TCP 클라이언트 오류: {e}. 5초 후 재시도...")
                 time.sleep(5)
+            # except ConnectionRefusedError:
+            #     # 서버가 닫혀있거나 연결을 거부할 경우
+            #     print("Connection refused. Retrying in 5 seconds...")
+            #     time.sleep(5)
             except Exception as e:
                 # 그 외 다른 네트워크 오류
                 print(f"TCP client error: {e}. Retrying in 5 seconds...")
                 time.sleep(5)
+        
+        print("TCP Receiver 스레드 종료.")
+    # --- [전체 교체] ---
+
+
+
         
         print("TCP Receiver (Client Mode) stopped.")
 
@@ -257,6 +282,11 @@ class PatrolDashboard(QMainWindow):
         super().__init__()
         self.setupUi(self)
         self.log_viewer_dialog = None
+
+        # --- [추가] 명령어 전송을 위한 공유 큐 생성 ---
+        self.command_queue = Queue()
+        # --- [추가] ---
+
 
           # Pygame 믹서 초기화
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
@@ -333,29 +363,42 @@ class PatrolDashboard(QMainWindow):
             "쓰러진 사람": 0,
             "화재": 1,
             "폭행": 2,
-            "실종자 발견": 3
+            "실종자 발견": 3,
+            "무단 투기": 4,
+            "흡연": 5
         }
     
-        self.tcp_receiver = TcpReceiver(self)
+        # self.tcp_receiver = TcpReceiver(self)
+        self.tcp_receiver = TcpReceiver(self.command_queue, self)
         self.tcp_receiver.data_received.connect(self.process_tcp_data)
         self.tcp_receiver.start()
 
-        # --- [추가] AI 모델의 영문 클래스 이름을 UI의 한글 이벤트 이름으로 변환하기 위한 딕셔너리 ---
+        # --- [전체 교체] AI 모델의 모든 영문 클래스 이름을 UI의 한글 이벤트 이름으로 변환하기 위한 딕셔너리 ---
         self.class_name_map = {
-            # 화재 관련 이벤트
+            # 화재 관련
             "detect_fire": "화재",
             "detect_fire_danger_smoke": "화재",
             "detect_fire_general_smoke": "화재",
             
-            # 폭행 관련 이벤트 (예시)
-            "violence": "폭행",
-            
-            # 쓰러진 사람 관련 이벤트 (예시)
-            "fallen": "쓰러진 사람",
-            
-            # (필요에 따라 다른 AI 탐지 클래스 이름과 한글 이벤트 이름을 여기에 추가)
-        }
+            # 폭행 관련
+            "Fight": "폭행",
+            "NonFight": None, # NonFight는 이벤트로 처리하지 않음 (None으로 설정)
 
+            # 쓰러진 사람 관련 (feat_detect_fall은 class_name이 없으므로 별도 처리)
+            "fallen": "쓰러진 사람", # 혹시 모를 다른 모델을 위해 유지
+            
+            # 실종자 관련
+            "detect_missing_person": "실종자 발견",
+            
+            # 흡연 관련
+            "smoke": "흡연",
+            "not_smoke": None, # 비흡연자는 이벤트로 처리하지 않음
+
+            # 무단 투기 관련 (이벤트 판별은 별도 로직으로 처리)
+            "human": "무단 투기 객체", # 임시 이름
+            "trash": "무단 투기 객체"  # 임시 이름
+        }
+        # --- [전체 교체] ---
 
 
 
@@ -565,8 +608,10 @@ class PatrolDashboard(QMainWindow):
         # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
     def send_stop_alarm_command(self, event_type):
         """monitoringGUI에서 situationDetector로 '알람 종료' 명령을 전송합니다."""
-        TARGET_IP = "192.168.0.86"
-        TARGET_PORT = 2401
+        # 두번 열어서 되지 않았다
+        # TARGET_IP = "192.168.0.86"
+        # TARGET_IP = "127.0.0.1"  # 테스트용 localhost
+        # TARGET_PORT = 2401
 
         SOURCE_ID = 4          # 보내는 곳: monitoringGUI (0x04)
         DESTINATION_ID = 2     # 받는 곳: situationDetector (0x02)
@@ -578,19 +623,26 @@ class PatrolDashboard(QMainWindow):
             print(f"경고: {event_type}에 해당하는 알람 종료 코드를 찾을 수 없습니다.")
             return
 
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(2) 
-                sock.connect((TARGET_IP, TARGET_PORT))
-                
-                # [수정] 'BBBB': 4개의 unsigned char 형식으로 데이터를 패킹
-                payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
-                
-                sock.send(payload)
-                print(f"알람 종료 명령 전송 성공: {payload.hex()}")
+        # 데이터를 바이트로 패킹
+        payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
 
-        except Exception as e:
-            print(f"알람 종료 명령 전송 실패: {e}")
+        # 직접 보내지 않고, 공유 큐에 데이터를 넣습니다.
+        self.command_queue.put(payload)
+        print(f"알람 종료 명령을 전송 큐에 추가했습니다: {payload.hex()}")
+
+        # try:
+        #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        #         sock.settimeout(2) 
+        #         sock.connect((TARGET_IP, TARGET_PORT))
+                
+        #         # [수정] 'BBBB': 4개의 unsigned char 형식으로 데이터를 패킹
+        #         payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
+                
+        #         sock.send(payload)
+        #         print(f"알람 종료 명령 전송 성공: {payload.hex()}")
+
+        # except Exception as e:
+        #     print(f"알람 종료 명령 전송 실패: {e}")
         # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
 
 
@@ -600,38 +652,143 @@ class PatrolDashboard(QMainWindow):
             self.log_viewer_dialog.show()
         self.log_viewer_dialog.activateWindow()
 
+    # PatrolDashboard 클래스 내부의 process_tcp_data 함수를 아래 내용으로 전체 교체합니다.
+
     def process_tcp_data(self, json_data):
-        """수신된 TCP JSON 데이터를 처리하여 이벤트를 발생시키는 슬롯"""
+        """
+        수신된 TCP JSON 데이터를 종류에 따라 각기 다른 핸들러로 분기하여 처리합니다.
+        """
         print("TCP 데이터 처리 시작:", json_data)
-        timestamp = json_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-
-        # 1. 'detection' 딕셔너리를 가져옵니다.
+        
         detection_features = json_data.get("detection", {})
+        if not detection_features:
+            return
 
-        # 2. 딕셔너리 내부의 모든 값(탐지 결과 리스트)을 순회합니다.
-        #    (예: "feat_detect_fire" 리스트, "feat_detect_violence" 리스트 등)
-        for feature_results in detection_features.values():
-            # feature_results가 리스트 형태일 경우에만 처리
-            if isinstance(feature_results, list):
-                # 3. 각 탐지 결과 리스트 내부의 개별 객체를 순회합니다.
-                for detection in feature_results:
-                    # AI 모델이 보낸 영문 클래스 이름을 가져옵니다.
-                    eng_class_name = detection.get("class_name")
-                    
-                    # 4. __init__에서 정의한 맵을 사용해 한글 이벤트 이름으로 변환합니다.
-                    event_type = self.class_name_map.get(eng_class_name)
-                    
-                    # 5. 매핑된 한글 이벤트 이름이 있을 경우에만 로그/경고를 생성합니다.
-                    if event_type:
-                        confidence = detection.get("confidence", 0.0)
-                        # trigger_event를 호출하여 로그 기록, 팝업, 알람 등을 처리합니다.
-                        self.trigger_event(event_type, confidence, is_auto=True)
+        # detection 딕셔너리의 키("feat_detect_fire" 등)를 기준으로 분기
+        for feature_key, results in detection_features.items():
+            if not isinstance(results, list):
+                continueㄴ
 
-        # 로그 뷰어가 열려있을 경우, 새로운 로그를 반영하여 업데이트합니다.
+            if feature_key == "feat_detect_fire":
+                self.handle_generic_event(results, "화재", "confidence")
+            
+            elif feature_key == "feat_detect_fall":
+                # 쓰러짐 이벤트는 신뢰도 키가 다르므로 별도 처리
+                self.handle_generic_event(results, "쓰러진 사람", "score_event")
+
+            elif feature_key == "feat_detect_violence":
+                # 폭행 이벤트는 'Fight' 클래스만 이벤트로 처리
+                self.handle_violence_event(results)
+            
+            elif feature_key == "feat_detect_missing_person":
+                # 실종자 이벤트는 추가 정보(person_info)가 있으므로 별도 처리
+                self.handle_missing_person_event(results)
+
+            elif feature_key == "feat_detect_smoke":
+                # 흡연 이벤트는 'smoke' 클래스만 이벤트로 처리
+                self.handle_generic_event(results, "흡연", "confidence", target_class="smoke")
+
+            elif feature_key == "feat_detect_trash":
+                # 무단 투기는 'human'과 'trash'가 함께 있어야 하므로 별도 처리
+                self.handle_trash_event(results)
+
+        # 로그 뷰어 업데이트
         if self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
             self.log_viewer_dialog.all_log_entries = self.log_entries
             self.log_viewer_dialog.request_logs_from_server()
 
+    # def process_tcp_data(self, json_data):
+    #     """수신된 TCP JSON 데이터를 처리하여 이벤트를 발생시키는 슬롯"""
+    #     print("TCP 데이터 처리 시작:", json_data)
+    #     timestamp = json_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    #     # 1. 'detection' 딕셔너리를 가져옵니다.
+    #     detection_features = json_data.get("detection", {})
+
+    #     # 2. 딕셔너리 내부의 모든 값(탐지 결과 리스트)을 순회합니다.
+    #     #    (예: "feat_detect_fire" 리스트, "feat_detect_violence" 리스트 등)
+    #     for feature_results in detection_features.values():
+    #         # feature_results가 리스트 형태일 경우에만 처리
+    #         if isinstance(feature_results, list):
+    #             # 3. 각 탐지 결과 리스트 내부의 개별 객체를 순회합니다.
+    #             for detection in feature_results:
+    #                 # AI 모델이 보낸 영문 클래스 이름을 가져옵니다.
+    #                 eng_class_name = detection.get("class_name")
+                    
+    #                 # 4. __init__에서 정의한 맵을 사용해 한글 이벤트 이름으로 변환합니다.
+    #                 event_type = self.class_name_map.get(eng_class_name)
+                    
+    #                 # 5. 매핑된 한글 이벤트 이름이 있을 경우에만 로그/경고를 생성합니다.
+    #                 if event_type:
+    #                     confidence = detection.get("confidence", 0.0)
+    #                     # trigger_event를 호출하여 로그 기록, 팝업, 알람 등을 처리합니다.
+    #                     self.trigger_event(event_type, confidence, is_auto=True)
+
+    #     # 로그 뷰어가 열려있을 경우, 새로운 로그를 반영하여 업데이트합니다.
+    #     if self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
+    #         self.log_viewer_dialog.all_log_entries = self.log_entries
+    #         self.log_viewer_dialog.request_logs_from_server()
+
+
+    # PatrolDashboard 클래스 내부에 아래 함수들을 모두 추가합니다.
+
+    def handle_generic_event(self, results, event_name, conf_key, target_class=None):
+        """
+        단순한 형태의 이벤트를 처리하는 범용 함수.
+        results: 탐지 객체 리스트
+        event_name: 발생시킬 이벤트의 한글 이름
+        conf_key: 신뢰도 점수가 담긴 키 이름 ("confidence" 또는 "score_event")
+        target_class: 특정 클래스 이름일 때만 이벤트를 발생시켜야 할 경우 사용
+        """
+        for detection in results:
+            # target_class가 지정되었는데, 현재 객체의 class_name이 그것과 다르면 건너뛰기
+            if target_class and detection.get("class_name") != target_class:
+                continue
+            
+            confidence = detection.get(conf_key, 0.0)
+            # 신뢰도가 0보다 클 때만 이벤트 발생
+            if confidence > 0.6:
+                self.trigger_event(event_name, confidence, is_auto=True)
+
+    def handle_violence_event(self, results):
+        """폭행 이벤트 처리. 'Fight' 클래스만 실제 이벤트로 간주합니다."""
+        for detection in results:
+            if detection.get("class_name") == "Fight":
+                confidence = detection.get("confidence", 0.0)
+                if confidence > 0:
+                    self.trigger_event("폭행", confidence, is_auto=True)
+
+    def handle_missing_person_event(self, results):
+        """실종자 이벤트 처리. 이름 등 추가 정보를 포함할 수 있습니다."""
+        for detection in results:
+            confidence = detection.get("confidence", 0.0)
+            person_info = detection.get("person_info", {})
+            # 나중에 trigger_event 함수를 수정하여 person_info를 활용할 수 있습니다.
+            # 예: self.trigger_event("실종자 발견", confidence, is_auto=True, details=person_info)
+            if confidence > 0:
+                self.trigger_event("실종자 발견", confidence, is_auto=True)
+
+    def handle_trash_event(self, results):
+        """무단 투기 이벤트 처리. 'human'과 'trash'가 모두 존재할 때만 이벤트로 간주합니다."""
+        has_human = False
+        has_trash = False
+        max_confidence = 0.0
+
+        for detection in results:
+            class_name = detection.get("class_name")
+            if class_name == "human":
+                has_human = True
+            elif class_name == "trash":
+                has_trash = True
+            
+            # 이벤트의 대표 신뢰도를 가장 높은 값으로 설정
+            confidence = detection.get("confidence", 0.0)
+            if confidence > max_confidence:
+                max_confidence = confidence
+
+        # 두 종류의 객체가 모두 발견되었을 때만 '무단 투기' 이벤트 발생
+        if has_human and has_trash:
+            self.trigger_event("무단 투기", max_confidence, is_auto=True)
 
     # closeEvent 수정
     def closeEvent(self, event):
