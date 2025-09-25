@@ -648,7 +648,7 @@ class PatrolDashboard(QMainWindow):
 
     def open_log_viewer(self):
         if self.log_viewer_dialog is None or not self.log_viewer_dialog.isVisible():
-            self.log_viewer_dialog = LogViewerDialog(self, self.log_entries, self.event_colors)
+            self.log_viewer_dialog = LogViewerDialog(self)
             self.log_viewer_dialog.show()
         self.log_viewer_dialog.activateWindow()
 
