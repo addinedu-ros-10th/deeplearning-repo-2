@@ -132,7 +132,7 @@ def process_and_store_data(data_dict):
             connection.close()
 
 
-def start_server(host='0.0.0.0', port=9999):
+def start_server(host='0.0.0.0', port=2301):
     """TCP 서버 실행"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, port))

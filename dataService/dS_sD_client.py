@@ -4,28 +4,29 @@ import json
 from datetime import datetime
 import base64
 
-def send_data_to_server(host='127.0.0.1', port=9999):
+def send_data_to_server(host='127.0.0.1', port=2301):
     """서버에 테스트용 JSON 데이터를 전송합니다."""
 
     # --- 테스트용 샘플 데이터 생성 ---
-    # 실제 클라이언트에서 생성될 데이터와 유사한 구조로 만듭니다.
-    sample_data = {
-      "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
-      "patrol_car": "0",
-      "class_name": "Fight",
-      "raw_result": {
-        "confidence": 0.85,
-        "object_count": 2,
-        "location": { "lat": 37.5665, "lon": 126.9780 }
-      },
-      "media_info": {
-        "rel_path": "/events/video/2025/09/25/suspicious_alpha.mp4",
-        "validation": True,
-        "mime_type": "video/mp4"
-      },
-      # [요구사항 2] DB에 저장되지 않아야 할 동영상 프레임 데이터 (예: 1x1 픽셀 이미지)
-      "video_frame": base64.b64encode(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc\xde\x00\x00\x00\x00IEND\xaeB`\x82').decode('utf-8')
-    }
+    # 실제 클라이언트에서 생성될 데이터와 유사한 구조로 만듭니다.    
+    
+    # sample_data = {
+    #   "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+    #   "patrol_car": "0",
+    #   "class_name": "Fight",
+    #   "raw_result": {
+    #     "confidence": 0.85,
+    #     "object_count": 2,
+    #     "location": { "lat": 37.5665, "lon": 126.9780 }
+    #   },
+    #   "media_info": {
+    #     "rel_path": "/events/video/2025/09/25/suspicious_alpha.mp4",
+    #     "validation": True,
+    #     "mime_type": "video/mp4"
+    #   },
+    #   # [요구사항 2] DB에 저장되지 않아야 할 동영상 프레임 데이터 (예: 1x1 픽셀 이미지)
+    #   "video_frame": base64.b64encode(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc\xde\x00\x00\x00\x00IEND\xaeB`\x82').decode('utf-8')
+    # }
 
     try:
         # 서버에 보낼 데이터를 JSON 문자열로 변환 후, UTF-8 바이트로 인코딩
