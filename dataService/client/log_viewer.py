@@ -49,7 +49,7 @@ class LogViewerDialog(QDialog):
         super().__init__(parent)
         self._load_ui_and_find_widgets()
 
-        self.server_host = "127.0.0.1"
+        self.server_host = "192.168.0.23"
         self.server_port = 3401
         self.filtered_log_entries = []
         
@@ -245,6 +245,7 @@ class LogViewerDialog(QDialog):
         if self.playing_video and self.video_capture and self.video_capture.isOpened():
             ret, frame = self.video_capture.read()
             if ret:
+                frame = cv2.flip(frame, 0)
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = rgb_image.shape
                 qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format_RGB888)
