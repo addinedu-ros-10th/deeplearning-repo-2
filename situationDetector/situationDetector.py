@@ -11,6 +11,7 @@ from situationDetector.sender.udp_main_sender import send_udp_frame_to_main
 
 # 통합된 통신 모듈 import
 from situationDetector.server.tcp_dm_server import dm_server_run
+# from situationDetector.server.tcp_gui_server import gui_server_run_archive
 from situationDetector.server.tcp_gui_server import gui_server_run
 from situationDetector.server.tcp_ds_server import ds_server_run
 
@@ -76,7 +77,6 @@ class SituationDetector:
     
     # 2. 스레드 공유 이벤트 변수 초기화
     self.shutdown_event = threading.Event()
-    self.db_tcp_connected_event = threading.Event()
     
     # 3. 공유 데이터 큐 초기화
       # analyzer_input_queues 데이터 형식
@@ -261,40 +261,32 @@ class SituationDetector:
     )
     self.threads.append(dm_communicator_thread)
 
-    # # 3. GUI 순찰 해제 통신 스레드
-    #   # 1. 이벤트 수신
-    #   # 2. 모델 분석 결과 송신
-    # clear_event_receiver_thread = threading.Thread(
-    #     target=receive_clear_event,
-    #     args=(self.event_clear_queue,
-    #           self.shutdown_event,),
-    #     daemon=True
-    # )
-    # self.threads.append(clear_event_receiver_thread)
-
-    # 4. dataService 모델 분석 결과 / 영상 데이터 통신 스레드
-      # 1. 이벤트 영상 송신
-      # 2. 모델 분석 결과 송신
+    # 3. GUI 순찰 해제 통신 스레드
+      # 1. 모델 분석 결과 송신
+      # 2. 이벤트 수신
     ds_server_thread = threading.Thread(
       # target = self.CLIENTS_CONFIG[1]["target"],
       target = gui_server_run,
-      args=(self.final_output_queues[1],
+      args=(self.final_output_queues[0],
+            self.event_clear_queue,
             self.shutdown_event),
       daemon=True
     )
     self.threads.append(ds_server_thread)
 
+    # 4. dataService 모델 분석 결과 / 영상 데이터 통신 스레드
+      # 1. 30초 이벤트 영상 송신
+      # 2. 모델 분석 결과 송신
+    main_tcp_sender_thread = threading.Thread(
+      target=ds_server_run,
+      args=(self.event_video_queue,
+            self.final_output_queues[1], 
+            self.shutdown_event),
+      daemon=True
+    )
+    self.threads.append(main_tcp_sender_thread)
 
-    # # 3. GUI 순찰 해제 이벤트 수신 스레드
-    # clear_event_receiver_thread = threading.Thread(
-    #     target=receive_clear_event,
-    #     args=(self.event_clear_queue,
-    #           self.shutdown_event,),
-    #     daemon=True
-    # )
-    # self.threads.append(clear_event_receiver_thread)
-
-    # 4. N개 분석 스레드 - 소비자
+    # 5. N개 분석 스레드 - 소비자
     for i, config in enumerate(self.ANALYZER_CONFIG):
       analyzer_thread = threading.Thread(
         target=config["target"],
@@ -306,22 +298,14 @@ class SituationDetector:
       )
       self.threads.append(analyzer_thread)
 
-    # 5. 결과 취합 스레드 (Aggregator)
+    # 6. 결과 취합 스레드 (Aggregator)
     aggregator_thread = threading.Thread(
       target = self.aggregate_results,
       daemon=True
     )
     self.threads.append(aggregator_thread)
 
-    # # 6. Main Server TCP 전송 스레드 (분석 결과 JSON 및 30초 이벤트 영상 발신)
-    # main_tcp_sender_thread = threading.Thread(
-    #   target=send_tcp_data_to_main,
-    #   args=(self.final_output_queue, 
-    #         self.db_tcp_connected_event, 
-    #         self.shutdown_event),
-    #   daemon=True
-    # )
-    # self.threads.append(main_tcp_sender_thread)
+
 
   def run(self):
     self.setup_thread()

@@ -2,6 +2,7 @@
 """
 situationDetector <-> dataService 양방향 TCP 통신 모듈
 """
+import json
 import socket
 import threading
 import queue
@@ -12,7 +13,7 @@ import struct
 TCP_HOST = '192.168.0.86'  # situationDetector 자신의 IP 주소
 TCP_PORT = 2301         # dataService와 통신할 단일 포트
 
-def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Queue, shutdown_event: threading.Event):
+def _handle_send(conn: socket.socket, addr: tuple, final_output_queues: queue.Queue, shutdown_event: threading.Event):
     """
     하나의 dataServer 클라이언트에 데이터를 지속적으로 송신하는 스레드.
     송신 데이터 : 합산 데이터 (6가지 모델 분석 결과 + 해제 요청이 있으면 30초간 무시)
@@ -21,9 +22,13 @@ def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Que
     try:
         while not shutdown_event.is_set():
             try:
-                ai_result = final_output_queue.get() 
-                conn.send(ai_result)
+                ai_result = final_output_queues.get()
+                # conn.send(ai_result)
+                # print(ai_result)
                 print(f"situationDetector (TCP dS Communicator) : [{addr}] 테스트 데이터 전송 완료 ({len(ai_result)} bytes)")
+                json_string = json.dumps(ai_result) 
+                conn.send(json_string.encode('utf-8'))                
+
 
             except queue.Empty:
                 # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
@@ -40,7 +45,9 @@ def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Que
     finally:
         print(f"situationDetector (TCP dS Communicator) : [{addr}] 송신 스레드 종료.")
 
-def ds_server_run(final_output_queues: queue.Queue,
+
+def ds_server_run(event_video_queue : queue.Queue,
+                        final_output_queues: queue.Queue,
                         shutdown_event: threading.Event):
     """
     deviceManager 클라이언트의 연결을 수락하고,
@@ -65,7 +72,7 @@ def ds_server_run(final_output_queues: queue.Queue,
                     conn, addr = server_sock.accept()
                     print(f"situationDetector (TCP dS Communicator) : dS 클라이언트 연결됨: {addr}")
 
-                    # 3. 연결된 클라이언트를 위한 수신/송신 스레드 생성 및 시작
+                    # 3. 연결된 클라이언트를 위한 (수신)/송신 스레드 생성 및 시작
                     sender = threading.Thread(target=_handle_send, args=(conn, addr, final_output_queues, shutdown_event))
                     sender.daemon = True
                     sender.start()
