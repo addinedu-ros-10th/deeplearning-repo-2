@@ -3,22 +3,6 @@ import time
 import queue
 import threading
 
-"""
-작업 진행 상황
-1. deviceManager -> situationDetector 으로 이벤트 영상을 수신하는 코드는 마무리 단계
-2. situationDetector -> deviceManager 으로 이벤트 영상 생성 요청 정보를 발신하는 통신 코드가 없어서 진행중
-  - 단순 테스트 데이터 발신하는 코드 구현중
-  - 모델 1개를 이용한 실제 데이터를 이용해서 이벤트를 발생시키는 코드 작성 및 향후 6개로 통합 예정
-3. situationDetector -> dataService 으로 보낼 모델 해석 데이터를 만드는 껍데기 코드 완성 및 1개 기능에 대해서 테스트 완료
-  - 단순 통신 (발신) 기능만 추가하면 완성 단계
-
-situationDetector -> deviceManager 순찰 이벤트 설정 기능 구현
-
-TODO
-1. 통신기능 구현 마무리 / 포트번호 통일 등의 작업 마무리
-2. 성경님 gui -> dM 바이의 기능 통합
-"""
-
 
 TCP_HOST = '192.168.0.86' # deviceManager IP 주소
 TCP_PORT = 1201            # deviceManager TCP 발신 포트 주소

@@ -5,7 +5,7 @@ import json
 # --------------------------
 # TCP 수신 (XML/JSON 데이터)
 # --------------------------
-def start_tcp_receiver(host="127.0.0.1", port=2301):
+def start_tcp_receiver(host="127.0.0.1", port=2303):
     tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_server.bind((host, port))
     tcp_server.listen(1)
@@ -21,6 +21,14 @@ def start_tcp_receiver(host="127.0.0.1", port=2301):
         try:
             # JSON 디코딩 시도
             message = json.loads(data.decode('utf-8'))
+            
+            #logs = [{"time": "2025-09-16 10:00", "event": f"{patrol_car} started patrol"}]
+            #resp = {"status": "ok", "logs": logs}
+            resp = {"status": "ok"}
+            conn.send(json.dumps(resp).encode('utf-8'))
+
+            print(f"Sent get_logs response to {addr}: {resp}")
+
             print("\n[TCP] === Received JSON Message ===")
             print("Raw:", data.decode())
             print("Type:", type(message))

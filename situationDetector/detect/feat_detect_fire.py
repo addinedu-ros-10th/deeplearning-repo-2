@@ -32,9 +32,18 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
   # 프로그램이 종료되지 않은 동안
   while not shutdown_event.is_set():
     try:
-      # 큐에서 프레임을 가져오고, timeout을 설정하여 blocking방지 및 종료신호 확인
-      frame_count, frame_time, frame = analysis_frame_queue.get(timeout=1.0)
+      # # 큐에서 프레임을 가져오고, timeout을 설정하여 blocking방지 및 종료신호 확인
+      # frame_count, frame_time, frame = analysis_frame_queue.get(timeout=1.0)
+
+      # (수정) 큐에서 딕셔너리 형태로 데이터 가져오기
+      input_data = analysis_frame_queue.get(timeout=1.0)
       
+      # 딕셔너리에서 각 데이터 추출
+      frame = input_data.get("frame")
+      frame_count = input_data.get("frame_count")
+      frame_time = input_data.get("timestamp")
+      patrol_number = input_data.get("patrol_number")
+
       # 현재 프레임 카운트 정보가 없으면 처리하지 않음
       if not frame_count:
         continue
@@ -78,10 +87,10 @@ def run_fire_detect(analysis_frame_queue: queue.Queue,
         "timestamp" : frame_time,
         "analyzer_name" : analyzer_name,
         "detection_count" : len(detection_list), # 감지된 객체의 수
-        "patrol_number" : 1
+        "patrol_number" : patrol_number, # 순찰차 이름
       }
       
-      print(result_package)
+      # print(result_package)
       
       try:
         # aggregation_queue 추가 타입 : json

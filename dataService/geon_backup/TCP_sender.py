@@ -10,7 +10,7 @@ import time
 def request_from_dataservice(request_payload):
     """dataService에 JSON 요청을 보내고 응답을 받는 함수"""
     HOST = 'localhost'  # dataService 서버 주소
-    PORT = 8800         # dataService 서버 TCP 포트
+    PORT = 2303       # dataService 서버 TCP 포트
     
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -81,10 +81,10 @@ def request_from_dataservice(request_payload):
         
 # --- 사용 예시 ---
 # 1. 로그 요청
-log_request = {"command": "get_logs", "patrol_car": "Patrol_Car_1"}
-logs_response = request_from_dataservice(log_request)
-if logs_response:
-    logs = json.loads(logs_response.decode('utf-8'))
+# log_request = {"command": "get_logs", "patrol_car": "Patrol_Car_1"}
+# logs_response = request_from_dataservice(log_request)
+# if logs_response:
+#     logs = json.loads(logs_response.decode('utf-8'))
     # GUI에 로그 표시
 
 # 2. 이미지 요청
@@ -101,7 +101,7 @@ Search_json = {
     "time_start": "20250918",           ## 검색 시작 일자
     "time_end": "20250920",             ## 검색 종료 일자
     "time_orderby": "true",             ## 검색 결과 순서, true: 최신순, false: 오래된 순
-    "detection_type": ["0", "3"]        ## 검색 이벤트
+    "detection_types": ["0", "3"]        ## 검색 이벤트
     }
 
 video_response_bytes = request_from_dataservice(Search_json)
