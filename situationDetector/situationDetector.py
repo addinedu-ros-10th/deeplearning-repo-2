@@ -15,8 +15,9 @@ from situationDetector.server.tcp_dm_server import dm_server_run
 from situationDetector.server.tcp_gui_server import gui_server_run
 from situationDetector.server.tcp_ds_server import ds_server_run
 
-
 from situationDetector.detect.feat_detect_fire import run_fire_detect
+
+from situationDetector.videoManager import make_event_video
 
 # from situationDetector.detect.feat_detect_fall import run_fall_detect
 # from situationDetector.detect.feat_detect_smoke import run_smoke_detect
@@ -46,8 +47,9 @@ class SituationDetector:
     """
     SituationDetector의 공유 큐, 이벤트, 스레드 리스트 (StateMachine) 등 초기화
     """
-    # 1. 분석 모델 설정 초기화
+    # 1. 프레임을 소비하는 스레드 초기화
     self.ANALYZER_CONFIG = [
+        # 분석 모델 스레드 (6가지)
         # {"name" : "feat_detect_fall", "target" : run_fall_detect},
         {"name" : "feat_detect_fire", "target" : run_fire_detect},
         # {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
@@ -82,6 +84,9 @@ class SituationDetector:
       # analyzer_input_queues 데이터 형식
       # (<프레임 카운트>, <영상 시각>, <프레임 데이터>)
     self.analyzer_input_queues = [queue.Queue(maxsize=10) for _ in range(self.NUM_ANALYZERS)]
+    # 이벤트 데이터 생성 프레임 데이터 큐 초기화
+      # (<프레임 카운트>, <영상 시각>, <프레임 데이터>)
+    self.raw_frame_queue = queue.Queue(maxsize=10)    
     self.aggregation_queue = queue.Queue() # 분석 결과를 모으는 큐
     self.final_output_queue = queue.Queue() # Main Server에 전송할 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
     self.dm_event_queue = queue.Queue() # final_output_queue와 동일한 데이터를 dM으로 보내는 신호 생성용 큐
@@ -297,7 +302,7 @@ class SituationDetector:
     # 1. realtimeBroadcaster 실시간 영상 수신 스레드
     broadcaster_receiver_thread = threading.Thread(
       target=receive_cv_video,
-      args=(self.analyzer_input_queues ,self.shutdown_event),
+      args=(self.analyzer_input_queues, self.raw_frame_queue, self.shutdown_event),
       daemon=True
     )
     self.threads.append(broadcaster_receiver_thread)
@@ -357,6 +362,17 @@ class SituationDetector:
     )
     self.threads.append(aggregator_thread)
 
+    # 7. 이벤트 발생 시 전후 30초 영상을 생성하는 스레드
+    video_manager_thread = threading.Thread(
+        target=make_event_video,
+        args=(self.final_output_queue,     # 이벤트 감지용 큐
+              self.raw_frame_queue,        # 원본 영상 프레임 수신용 큐
+              self.event_video_queue,      # 생성된 이벤트 영상을 보낼 큐
+              self.shutdown_event),
+        daemon=True
+    )
+    self.threads.append(video_manager_thread)
+
     # # 7. [추가] 이벤트 영상 큐 감시 및 파일 저장 스레드 (디버깅용)
     # video_saver_thread = threading.Thread(
     #   target=self._save_event_video_from_queue,
@@ -386,42 +402,42 @@ class SituationDetector:
       t.join(timeout = 5) # 5초간 스레드가 종료되지 않으면 넘어감
     print("situationDetector Main : 모든 스레드 종료. 프로그램을 종료합니다.")
 
-# # -------------------------------------------------------------------------------
-# # 디버깅 영상 저장
+# -------------------------------------------------------------------------------
+# 디버깅 영상 저장
 
-#   def _save_event_video_from_queue(self):
-#     """
-#     self.event_video_queue를 지속적으로 감시하고,
-#     영상 데이터가 들어오면 지정된 경로에 파일로 저장하는 스레드 함수.
-#     (테스트 및 디버깅 목적)
-#     """
-#     print("situationDetector (Video Saver): 영상 저장 스레드 시작. 큐를 감시합니다.")
-#     while not self.shutdown_event.is_set():
-#       try:
-#         # 1. 큐에서 영상 아이템 가져오기 (데이터가 들어올 때까지 여기서 블로킹/대기)
-#         video_metadata, video_size, video_buffer = self.event_video_queue.get(timeout=1.0)
+  def _save_event_video_from_queue(self):
+    """
+    self.event_video_queue를 지속적으로 감시하고,
+    영상 데이터가 들어오면 지정된 경로에 파일로 저장하는 스레드 함수.
+    (테스트 및 디버깅 목적)
+    """
+    print("situationDetector (Video Saver): 영상 저장 스레드 시작. 큐를 감시합니다.")
+    while not self.shutdown_event.is_set():
+      try:
+        # 1. 큐에서 영상 아이템 가져오기 (데이터가 들어올 때까지 여기서 블로킹/대기)
+        video_metadata, video_size, video_buffer = self.event_video_queue.get(timeout=1.0)
         
-#         # 2. 저장할 경로 지정
-#         SAVE_VIDEO_PATH = "situationDetector/test_data/test2.mp4"
+        # 2. 저장할 경로 지정
+        SAVE_VIDEO_PATH = "situationDetector/test_data/test2.mp4"
         
-#         print(f"situationDetector (Video Saver): 큐에서 {video_size} 바이트 영상 수신. 저장을 시작합니다.")
+        print(f"situationDetector (Video Saver): 큐에서 {video_size} 바이트 영상 수신. 저장을 시작합니다.")
 
-#         # 3. 지정된 경로에 바이너리 쓰기("wb") 모드로 파일 저장
-#         with open(SAVE_VIDEO_PATH, "wb") as f:
-#           f.write(video_buffer)
+        # 3. 지정된 경로에 바이너리 쓰기("wb") 모드로 파일 저장
+        with open(SAVE_VIDEO_PATH, "wb") as f:
+          f.write(video_buffer)
         
-#         print(f"situationDetector (Video Saver): 영상을 성공적으로 저장했습니다. -> {SAVE_VIDEO_PATH}")
+        print(f"situationDetector (Video Saver): 영상을 성공적으로 저장했습니다. -> {SAVE_VIDEO_PATH}")
 
-#       except queue.Empty:
-#         # timeout(1.0초) 동안 큐에 데이터가 없으면 예외 발생. 정상적인 상황임.
-#         continue
-#       except Exception as e:
-#         print(f"situationDetector (Video Saver): [에러] 영상 파일 저장 중 오류 발생: {e}")
-#         # 오류가 발생해도 스레드는 계속 실행
+      except queue.Empty:
+        # timeout(1.0초) 동안 큐에 데이터가 없으면 예외 발생. 정상적인 상황임.
+        continue
+      except Exception as e:
+        print(f"situationDetector (Video Saver): [에러] 영상 파일 저장 중 오류 발생: {e}")
+        # 오류가 발생해도 스레드는 계속 실행
     
-#     print("situationDetector (Video Saver): 영상 저장 스레드 종료.")
+    print("situationDetector (Video Saver): 영상 저장 스레드 종료.")
 
-# # -------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 
 
