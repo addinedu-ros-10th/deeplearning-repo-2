@@ -138,7 +138,7 @@ class deviceManager(Tcp_client_manager):
     
     def main(self):
         self.socket_init()
-        self.media_init()
+        # self.media_init()
 
         self.Tcp_thread = Thread(target=self.receive_data)
         self.Tcp_thread.daemon = True
