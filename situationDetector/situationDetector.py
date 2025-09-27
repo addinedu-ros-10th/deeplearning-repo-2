@@ -96,12 +96,45 @@ class SituationDetector:
     
     # 4. 30초 이벤트 비디오 영상 큐 초기화
     self.event_video_queue = queue.Queue()
+    
 
     # [기능] GUI 이벤트 해제 요청을 관리하기 위한 딕셔너리
     # 형식: { alarm_type: end_time }
     self.ignore_events = {}
+    
+    # [2. 30초 재인식 방지 기능]
+    # [기능] 한번 인식 / 전송한 이벤트는 30초간 재인식하지 않도록 관리하기 위한 딕셔너리
+    # 형식: { alarm_type: end_time }
+    self.received_events = {}
 
     self.threads = []
+
+    # # dataService 데모 영상 전송 테스트
+    # try:
+    #     VIDEO_PATH = "situationDetector/test_data/test.mp4"
+    #     with open(VIDEO_PATH, "rb") as f:
+    #     # test_video = (video_metadata, video_size, video_file)
+    #         video_buffer_test = f.read()
+        
+    #     video_size_test = len(video_buffer_test)
+    #     # 테스트용 메타데이터 생성
+    #     video_metadata_test = {
+    #         "source": 0x01, # dM
+    #         "destination" : 0x02, # sD
+    #         "patrol_number" : 1, # Test patrol
+    #         "timestamp" : time.time(), # Example timestamp
+    #     }
+        
+    #     test_video_item = (video_metadata_test, video_size_test, video_buffer_test)
+    #     self.event_video_queue.put(test_video_item)
+    #     print(f"situationDetector (TCP dM Communicator) : 데모 영상 ({video_size_test} bytes)을 event_video_queue에 추가했습니다.")
+    # except FileNotFoundError:
+    #     print(f"situationDetector (TCP dM Communicator) : 데모 영상 파일을 찾을 수 없습니다: {VIDEO_PATH}")
+    # except Exception as e:
+    #     print(f"situationDetector (TCP dM Communicator) : 데모 영상 로딩 중 오류: {e}")
+
+
+
 
   def aggregate_results(self):
     """
@@ -143,24 +176,31 @@ class SituationDetector:
     
     while not self.shutdown_event.is_set():
       try:
-        # [알람 해제 기능] 이벤트 해제 큐 확인
+        # [1. 알람 해제 기능] 이벤트 해제 큐 확인
         try:
+          current_time = time.time()
+          
           clear_request = self.event_clear_queue.get_nowait()
           alarm_type_to_clear = clear_request.get("alarm_type")
           if alarm_type_to_clear is not None:
                 print(f"situationDetector (Aggregator): {alarm_type_to_clear} 타입 알람 해제 요청 수신. 30초간 무시합니다.")
                 # 현재 시간 + 30초로 무시 종료 시간 설정
-                self.ignore_events[alarm_type_to_clear] = time.time() + 30
+                self.ignore_events[alarm_type_to_clear] = current_time + 30
         except queue.Empty:
             pass # 처리할 해제 요청 없음
 
-        # [알람 해제 기능] 만료된 무시 이벤트 정리
+        # [1. 알람 해제 기능] 만료된 무시 이벤트 정리
         current_time = time.time()
         expired_alarms = [alarm for alarm, expiry_time in self.ignore_events.items() if current_time > expiry_time]
         for alarm in expired_alarms:
             print(f"situationDetector (Aggregator): {alarm} 타입 알람 무시 기간 만료.")
-            del self.ignore_events[alarm]
+            del self.ignore_events[alarm] # GUI 이벤트 해제 요청 삭제
 
+        # [2. 30초 재인식 방지 기능] 만료된 재인식 방지 이벤트 정리
+        expired_received = [alarm for alarm, expiry_time in self.received_events.items() if current_time > expiry_time]
+        for alarm in expired_received:
+            print(f"situationDetector (Aggregator): {alarm} 타입 이벤트 재인식 방지 기간 만료.")
+            del self.received_events[alarm] # 재인식 방지 데이터 정보 삭제
       
         # result_package 언패킹
         result_package = self.aggregation_queue.get(timeout=1.0)
@@ -168,7 +208,7 @@ class SituationDetector:
         timestamp = result_package["timestamp"] # 시간
         analyzer_name = result_package["analyzer_name"] # 기능 이름
         
-        # [알람 해제 기능] 현재 분석 결과가 무시 대상인지 확인
+        # [1. 알람 해제 기능] 현재 분석 결과가 무시 대상인지 확인
         alarm_type = self.ANALYZER_TO_ALARM_TYPE.get(analyzer_name)
         if alarm_type is not None and alarm_type in self.ignore_events:
             # 감지 결과를 0으로 만들어 무시 처리
@@ -195,6 +235,12 @@ class SituationDetector:
           for name, result in results_buffer[timestamp].items():
             if result["detection_count"] > 0:
               
+              # [2. 30초 재인식 방지 기능] 만료된 재인식 방지 이벤트 목록에 있으면 저장하지 않고 넘어감
+              current_alarm_type = self.ANALYZER_TO_ALARM_TYPE.get(name)
+              if current_alarm_type is not None and current_alarm_type in self.received_events:
+                  # print(f"situationDetector (Aggregator): {name} 이벤트는 재인식 방지 기간이므로 전송하지 않습니다.")
+                  continue # 재인식 방지 기간이므로 final_detections에 추가하지 않고 다음 결과로 넘어감
+                
               # 6-1. 현재 기능의 detection 데이터 리스트 가져오기
               detection_list = result["detection"]
               
@@ -205,6 +251,11 @@ class SituationDetector:
 
               # 6-3. 완성된 기능별 detect 데이터를 final_detections 딕셔너리에 저장
               final_detections[name] = detection_list
+
+              # [2. 30초 재인식 방지 기능] 새로운 이벤트이므로 재인식 방지 목록에 추가
+              if current_alarm_type is not None:
+                  print(f"situationDetector (Aggregator): {name} 이벤트 감지. 30초간 재인식 방지를 시작합니다.")
+                  self.received_events[current_alarm_type] = time.time() + 3
 
           # 5. 최종 json 데이터 생성
           agg_json_data = {
@@ -251,11 +302,12 @@ class SituationDetector:
     )
     self.threads.append(broadcaster_receiver_thread)
 
-    # 2. DeviceManager 양방향 통신 스레드 (영상 수신 및 이벤트 송신)
+    # 2. deviceManager 양방향 통신 스레드 (영상 수신 및 이벤트 송신)
     dm_communicator_thread = threading.Thread(
       target=dm_server_run,
-      args=(self.event_video_queue, 
+      args=(self.event_video_queue, # 이벤트 영상 송신
             self.final_output_queue,
+            self.ignore_events, # 알람 이벤트가 살아있는동안은 deviceManager에 255신호 전송
             self.shutdown_event),
       daemon=True
     )
@@ -305,7 +357,12 @@ class SituationDetector:
     )
     self.threads.append(aggregator_thread)
 
-
+    # # 7. [추가] 이벤트 영상 큐 감시 및 파일 저장 스레드 (디버깅용)
+    # video_saver_thread = threading.Thread(
+    #   target=self._save_event_video_from_queue,
+    #   daemon=True
+    # )
+    # self.threads.append(video_saver_thread)
 
   def run(self):
     self.setup_thread()
@@ -328,6 +385,51 @@ class SituationDetector:
     for t in self.threads:
       t.join(timeout = 5) # 5초간 스레드가 종료되지 않으면 넘어감
     print("situationDetector Main : 모든 스레드 종료. 프로그램을 종료합니다.")
+
+# # -------------------------------------------------------------------------------
+# # 디버깅 영상 저장
+
+#   def _save_event_video_from_queue(self):
+#     """
+#     self.event_video_queue를 지속적으로 감시하고,
+#     영상 데이터가 들어오면 지정된 경로에 파일로 저장하는 스레드 함수.
+#     (테스트 및 디버깅 목적)
+#     """
+#     print("situationDetector (Video Saver): 영상 저장 스레드 시작. 큐를 감시합니다.")
+#     while not self.shutdown_event.is_set():
+#       try:
+#         # 1. 큐에서 영상 아이템 가져오기 (데이터가 들어올 때까지 여기서 블로킹/대기)
+#         video_metadata, video_size, video_buffer = self.event_video_queue.get(timeout=1.0)
+        
+#         # 2. 저장할 경로 지정
+#         SAVE_VIDEO_PATH = "situationDetector/test_data/test2.mp4"
+        
+#         print(f"situationDetector (Video Saver): 큐에서 {video_size} 바이트 영상 수신. 저장을 시작합니다.")
+
+#         # 3. 지정된 경로에 바이너리 쓰기("wb") 모드로 파일 저장
+#         with open(SAVE_VIDEO_PATH, "wb") as f:
+#           f.write(video_buffer)
+        
+#         print(f"situationDetector (Video Saver): 영상을 성공적으로 저장했습니다. -> {SAVE_VIDEO_PATH}")
+
+#       except queue.Empty:
+#         # timeout(1.0초) 동안 큐에 데이터가 없으면 예외 발생. 정상적인 상황임.
+#         continue
+#       except Exception as e:
+#         print(f"situationDetector (Video Saver): [에러] 영상 파일 저장 중 오류 발생: {e}")
+#         # 오류가 발생해도 스레드는 계속 실행
+    
+#     print("situationDetector (Video Saver): 영상 저장 스레드 종료.")
+
+# # -------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
   sd = SituationDetector()

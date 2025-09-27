@@ -7,9 +7,10 @@ import threading
 import queue
 import time
 import struct
+from typing import Dict
 
 # 통신 설정
-TCP_HOST = '192.168.0.86'  # situationDetector 자신의 IP 주소
+TCP_HOST = '172.20.10.8'  # situationDetector 자신의 IP 주소
 TCP_PORT = 1201         # deviceManager와 통신할 단일 포트
 
 # 수신 데이터 헤더 정보
@@ -19,21 +20,39 @@ HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 # 송신 테스트 데이터 (기존 sender 모듈 참고)
 TEST_DATA_FIRE = b'\x02\x01\x01\x01'
 
+"""
+situationDetector (TCP dM Receive) : 헤더 (1, 2, 1, 2025, 9, 26, 21, 12, 28, 28)
+situationDetector (TCP dM Receive) : [('172.20.10.7', 48284)] 영상 수신 완료. 크기: 28 바이트
+situationDetector (TCP dM Receive) : 헤더 (56, 0, 0, 33333, 2304000, 0, 2320, 0, 0, 1)
+situationDetector (TCP dM Receive) : [('172.20.10.7', 48284)] 영상 수신 완료. 크기: 1 바이트
+situationDetector (TCP dM Receive) : 헤더 (0, 16, 0, 3758096386, 1, 0, 0, 0, 1275068416, 2488554313)
+situationDetector (Video Saver): 큐에서 28 바이트 영상 수신. 저장을 시작합니다.
+{'detection': {}, 'timestamp': None, 'patrol_number': 0}
+situationDetector (Video Saver): 영상을 성공적으로 저장했습니다. -> situationDetector/test_data/test2.mp4
+situationDetector (Video Saver): 큐에서 1 바이트 영상 수신. 저장을 시작합니다.
+situationDetector (Video Saver): 영상을 성공적으로 저장했습니다. -> situationDetector/test_data/test2.mp4
+situationDetector (TCP dS Communicator) : dS 서버 ('172.20.10.10', 2301)에 연결 시도
+{'detection': {}, 'timestamp': None, 'patrol_number': 0}
+situationDetector (TCP dS Communicator) : 클라이언트 메인 루프 오류: [Errno 113] No route to host
+{'detection': {}, 'timestamp': None, 'patrol_number': 0}
+situationDetector (TCP dS Communicator) : dS 서버 ('172.20.10.10', 2301)에 연결 시도
+
+"""
 def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Queue, shutdown_event: threading.Event):
     """
     deviceManager 클라이언트로부터 영상 메타데이터 / 30초 이벤트 영상 수신
     주요 기능: 30초 이벤트 영상 수신
     """
-    print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신 스레드 시작")
+    print(f"situationDetector (TCP dM Receive) : [{addr}] 수신 스레드 시작")
     try:
         while not shutdown_event.is_set():
             # 1. 고정 크기의 헤더 수신
             header_data = conn.recv(HEADER_SIZE)
             if not header_data:
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 클라이언트 연결 끊어짐.")
+                print(f"situationDetector (TCP dM Receive) : [{addr}] 클라이언트 연결 끊어짐.")
                 break
             
-            print(header_data)
+            # print(header_data)
             
             # 2. 헤더 언패킹
             unpacked_header = struct.unpack(HEADER_FORMAT, header_data)
@@ -45,15 +64,19 @@ def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Q
             }
             video_size = unpacked_header[9] # 영상 데이터 크기
             
+            # [테스트] 헤더 수신 로그
+            print(f"situationDetector (TCP dM Receive) : 헤더 {unpacked_header}")
+
+            
             # 3. 헤더에 명시된 크기만큼 영상 데이터 수신
             video_buffer = b''
             remain_size = video_size
             
             while remain_size > 0:
-                # 수신할 데이터 크기를 4096과 남은 크기 중 작은 값으로 선택
-                chunk = conn.recv(min(4096, remain_size))
+                # 수신할 데이터 크기를 1024과 남은 크기 중 작은 값으로 선택
+                chunk = conn.recv(min(1024, remain_size))
                 if not chunk:
-                    print(f"situationDetector (TCP dM Communicator) : [{addr}] 영상 데이터 수신 중 연결 끊김.")
+                    print(f"situationDetector (TCP dM Receive) : [{addr}] 영상 데이터 수신 중 연결 끊김.")
                     # 데이터가 불완전하므로 루프를 빠져나감
                     break
                 video_buffer += chunk
@@ -61,32 +84,38 @@ def _handle_receive(conn: socket.socket, addr: tuple, event_video_queue: queue.Q
             
             # 수신이 완료되지 않았다면, 현재 영상은 폐기
             if remain_size > 0:
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 영상 데이터가 불완전하게 수신됨.")
+                print(f"situationDetector (TCP dM Receive) : [{addr}] 영상 데이터가 불완전하게 수신됨.")
                 continue
 
             # 4. 수신 완료된 영상을 큐에 추가
             if video_buffer:
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 영상 수신 완료. 크기: {len(video_buffer)} 바이트")
-                video_item = (video_metadata, video_buffer)
+                print(f"situationDetector (TCP dM Receive) : [{addr}] 영상 수신 완료. 크기: {len(video_buffer)} 바이트")
+                video_item = (video_metadata, video_size, video_buffer)
                 event_video_queue.put(video_item)
+
+
             else:
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신된 영상 데이터가 없습니다.")
+                print(f"situationDetector (TCP dM Receive) : [{addr}] 수신된 영상 데이터가 없습니다.")
 
     except ConnectionResetError:
-        print(f"situationDetector (TCP dM Communicator) : [{addr}] 클라이언트 연결이 리셋되었습니다.")
+        print(f"situationDetector (TCP dM Receive) : [{addr}] 클라이언트 연결이 리셋되었습니다.")
     except Exception as e:
         # 종료 이벤트가 설정되지 않은 경우에만 오류 출력
         if not shutdown_event.is_set():
-            print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신 스레드 오류: {e}")
+            print(f"situationDetector (TCP dM Receive) : [{addr}] 수신 스레드 오류: {e}")
     finally:
-        print(f"situationDetector (TCP dM Communicator) : [{addr}] 수신 스레드 종료.")
+        print(f"situationDetector (TCP dM Receive) : [{addr}] 수신 스레드 종료.")
 
-def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Queue, shutdown_event: threading.Event):
+def _handle_send(conn: socket.socket, 
+                addr: tuple, 
+                final_output_queue: queue.Queue, 
+                ignore_events : Dict, 
+                shutdown_event: threading.Event):
     """
     하나의 deviceManager 클라이언트에 데이터를 지속적으로 송신하는 스레드.
     주요 기능: 분석에 따른 이벤트 발생 데이터(알람 등) 전송
     """
-    print(f"situationDetector (TCP dM Communicator) : [{addr}] 송신 스레드 시작")
+    print(f"situationDetector (TCP dM Send) : [{addr}] 송신 스레드 시작")
     try:
         while not shutdown_event.is_set():
             try:
@@ -138,28 +167,32 @@ def _handle_send(conn: socket.socket, addr: tuple, final_output_queue: queue.Que
                     elif 'feat_detect_littering' in detection_data: # 무단투기 감지 키(가정)
                         alarm_type = 3 # 무단투기 경고
                 
+                if len(ignore_events) != 0: # 알람해제 이벤트가 진행이면
+                    alarm_type = 255 # 알람 해제중 신호로 설정
+                
                 data_packet = struct.pack('>BBBB', SOURCE, DESTINATION, patrol_number, alarm_type)
                 
-                print(data_packet)
-                print(event)
+                # print(data_packet)
+                # print(event)
 
                 conn.send(data_packet)
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 테스트 데이터 전송 완료 ({len(TEST_DATA_FIRE)} bytes)")
+                # print(f"situationDetector (TCP dM Communicator) : [{addr}] 테스트 데이터 전송 완료 ({len(TEST_DATA_FIRE)} bytes)")
 
             except queue.Empty:
                 # 큐가 비어있는 것은 정상적인 상황이므로 계속 진행
                 continue
             except (socket.error, BrokenPipeError) as e:
-                print(f"situationDetector (TCP dM Communicator) : [{addr}] 소켓 오류 발생: {e}. 송신 스레드를 종료합니다.")
+                print(f"situationDetector (TCP dM Send) : [{addr}] 소켓 오류 발생: {e}. 송신 스레드를 종료합니다.")
                 break # 소켓 오류 시 루프 탈출
     except Exception as e:
         if not shutdown_event.is_set():
-            print(f"situationDetector (TCP dM Communicator) : [{addr}] 송신 스레드 오류: {e}")
+            print(f"situationDetector (TCP dM Send) : [{addr}] 송신 스레드 오류: {e}")
     finally:
-        print(f"situationDetector (TCP dM Communicator) : [{addr}] 송신 스레드 종료.")
+        print(f"situationDetector (TCP dM Send) : [{addr}] 송신 스레드 종료.")
 
 def dm_server_run(event_video_queue: queue.Queue,
                         final_output_queue: queue.Queue,
+                        ignore_events: Dict,
                         shutdown_event: threading.Event):
     """
     deviceManager 클라이언트의 연결을 수락하고,
@@ -223,7 +256,7 @@ def dm_server_run(event_video_queue: queue.Queue,
 
                     # 3. 연결된 클라이언트를 위한 수신/송신 스레드 생성 및 시작
                     receiver = threading.Thread(target=_handle_receive, args=(conn, addr, event_video_queue, shutdown_event))
-                    sender = threading.Thread(target=_handle_send, args=(conn, addr, final_output_queue, shutdown_event))
+                    sender = threading.Thread(target=_handle_send, args=(conn, addr, final_output_queue, ignore_events, shutdown_event))
                     receiver.daemon = True
                     sender.daemon = True
                     receiver.start()
