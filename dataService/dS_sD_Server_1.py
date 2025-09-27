@@ -81,7 +81,7 @@ def handle_client(conn, addr):
             break
 
         if data == b"DONE":
-            print("[INFO] Transmission DONE")
+            print("[INFO] DATA DONE")
             break
 
         try:
