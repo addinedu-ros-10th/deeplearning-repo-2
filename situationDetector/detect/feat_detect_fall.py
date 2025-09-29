@@ -3,7 +3,6 @@ import threading
 import time
 import json
 
-# 필요 시 경로 변경
 FALL_MODEL_PATH = "situationDetector/detect/feat_detect_fall/best.pt"
 
 def _load_model(weights_path: str):
