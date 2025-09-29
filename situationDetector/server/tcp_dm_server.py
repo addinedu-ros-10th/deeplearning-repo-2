@@ -171,7 +171,10 @@ def _handle_send(conn: socket.socket,
                     elif 'feat_detect_trash' in detection_data:
                         alarm_type = 3 # 무단투기 경고
                     elif 'feat_detect_smoke' in detection_data:
-                        alarm_type = 3 # 흡연자 경고
+                        alarm_type = 4 # 흡연자 경고
+
+                # if len(ignore_events) != 0: # 알람해제 이벤트가 진행이면
+                #     alarm_type = 255 # 알람 해제중 신호로 설정
 
                 # print(alarm_type)
                 

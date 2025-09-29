@@ -49,10 +49,10 @@ class SituationDetector:
     # 1. 프레임을 소비하는 스레드 초기화
     self.ANALYZER_CONFIG = [
         # 분석 모델 스레드 (6가지)
-        {"name" : "feat_find_missing", "target" : run_find_missing},
-        {"name" : "feat_detect_fall", "target" : run_fall_detect},
+        # {"name" : "feat_find_missing", "target" : run_find_missing},
+        # {"name" : "feat_detect_fall", "target" : run_fall_detect},
         {"name" : "feat_detect_fire", "target" : run_fire_detect},
-        {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
+        # {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
         
         # {"name" : "feat_detect_trash", "target" : run_trash_detect},
         # {"name" : "feat_detect_violence", "target" : run_violence_detect},

@@ -11,7 +11,7 @@ from pathlib import Path
 class Config:
     # 모델 및 경로
     MODEL_NAME = "buffalo_s"
-    BASE_DIR = Path("/home/choi/dev_ws/project_deepL_ws/deeplearning-repo-2/feat_find_missing/src")
+    BASE_DIR = Path("/home/park/dev_ws/deeplearning-repo-2/situationDetector/detect/feat_find_missing/src")
     EMB_PATH = BASE_DIR / "embeddings.npy"
     NAMES_PATH = BASE_DIR / "names.npy"
 

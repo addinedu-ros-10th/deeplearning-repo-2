@@ -71,7 +71,7 @@ def make_event_video(final_output_queue :queue.Queue,    # 취합 큐
   before_video = list()
   after_video = list()
   capture_time = 15  # 초 단위
-  capture_frame = 30 # 초당 프레임
+  capture_frame = 20 # 초당 프레임
   
   # 이벤트 발생 상태를 관리하는 변수
   alarm = 0
@@ -114,8 +114,8 @@ def make_event_video(final_output_queue :queue.Queue,    # 취합 큐
     
     # 3. --- 기존 deviceManager.event_video_setup() 로직 ---
     # 이벤트 발생 전 영상을 버퍼에 저장 (약 8.3초 분량)
-    if len(before_video) < capture_frame * capture_time - 200:
-    # if len(before_video) < capture_frame * capture_time:
+    # if len(before_video) < capture_frame * capture_time - 200:
+    if len(before_video) < capture_frame * capture_time:
       before_video.append(frame)
     else:
       # 알람이 없는 경우, 가장 오래된 프레임을 버리고 새 프레임을 추가하여 버퍼 크기 유지
@@ -125,8 +125,8 @@ def make_event_video(final_output_queue :queue.Queue,    # 취합 큐
         before_video.append(frame)
       # 알람이 활성화된 경우, 이벤트 발생 후 영상을 버퍼에 저장 (약 21.7초 분량)
       else:
-        if len(after_video) < capture_frame * capture_time + 200:
-        # if len(after_video) < capture_frame * capture_time:
+        # if len(after_video) < capture_frame * capture_time + 200:
+        if len(after_video) < capture_frame * capture_time:
           after_video.append(frame)
         # 필요한 만큼의 후-영상이 모두 저장되면 비디오 생성 절차 시작
         else:
@@ -165,8 +165,8 @@ def make_event_video(final_output_queue :queue.Queue,    # 취합 큐
 
           # --- 상태 초기화 ---
           # 다음 이벤트를 위해, '이후' 영상의 뒷부분을 새로운 '이전' 영상 버퍼로 사용
-          before_video = after_video[400:]
-          # before_video = after_video[450:]
+          # before_video = after_video[400:]
+          before_video = after_video[450:]
           after_video.clear()
           alarm = 0  # 알람 상태 비활성화
           current_event_data = None
