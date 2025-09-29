@@ -33,9 +33,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAIN_UI_PATH = os.path.join(BASE_DIR, "main_dashboard.ui")
 
 # 네트워크 설정
-TCP_SERVER_HOST = '172.20.10.8'
+TCP_SERVER_HOST = '192.168.0.86'
 TCP_SERVER_PORT = 2401
-VIDEO_STREAM_URL = "http://172.20.10.7:5100/stream?src=0"
+VIDEO_STREAM_URL = "http://192.168.0.180:5000/stream?src=0"
 RECONNECT_DELAY_SECONDS = 5
 
 # 미디어 및 레코딩 설정
@@ -280,6 +280,7 @@ class PatrolDashboard(QMainWindow, form_class):
         self.frame_buffer = deque(maxlen=FRAME_BUFFER_SIZE)
         self.recorder = RollingRecorder()
         
+        # [수정] '연기 감지' 색상 제거
         self.event_colors = {
             "화재": "red", 
             "폭행": "orange", 
@@ -287,17 +288,16 @@ class PatrolDashboard(QMainWindow, form_class):
             "실종자 발견": "blue", 
             "무단 투기": "gray", 
             "흡연자": "darkgray",
-            "연기 감지": "darkorange" 
         }
         
+        # [수정] '연기 감지' 이벤트 코드 제거
         self.event_to_code_map = {
             "화재": 0, 
             "쓰러진 사람": 1, 
             "흡연자": 2,
             "무단 투기": 3, 
             "폭행": 4, 
-            "실종자 발견": 6,
-            "연기 감지": 5
+            "실종자 발견": 255,
         }
 
     def _init_custom_widgets(self):
@@ -311,12 +311,12 @@ class PatrolDashboard(QMainWindow, form_class):
         pygame.mixer.set_num_channels(16)
         self.alert_sounds = {}
         
+        # [수정] '연기 감지' 사운드 파일 제거
         sound_map = {
-            "화재": "fire.mp3", 
+            "화재": "fire.mp3", # 연기 감지 시에도 이 사운드가 사용됩니다.
             "폭행": "violence.mp3",
             "쓰러진 사람": "faint.mp3", 
             "실종자 발견": "missing_person.mp3",
-            "연기 감지": "fire.mp3"
         }
         print("--- Loading alert sounds ---")
         for event, filename in sound_map.items():
@@ -455,32 +455,25 @@ class PatrolDashboard(QMainWindow, form_class):
             if not obj_list:
                 continue
 
-            # [수정] 'feat_detect_fire'에 새로운 전용 핸들러를 연결
+            # [수정] 'feat_detect_smoke'가 더 이상 별도 이벤트가 아니므로 핸들러에서 제거
             handlers = {
-                "feat_detect_fire": lambda: self.handle_fire_and_smoke_event(obj_list),
+                "feat_detect_fire": lambda: self.handle_fire_event(obj_list),
                 "feat_detect_fall": lambda: self.handle_generic_event(obj_list, "쓰러진 사람", "score_event"),
                 "feat_detect_violence": lambda: self.handle_violence_event(obj_list),
                 "feat_detect_missing_person": lambda: self.handle_missing_person_event(obj_list),
-                "feat_detect_smoke": lambda: self.handle_generic_event(obj_list, "연기 감지", "confidence", target_class="smoke"),
                 "feat_detect_trash": lambda: self.handle_trash_event(obj_list)
             }
             if feature in handlers:
                 handlers[feature]()
 
-    # [추가] 화재와 연기를 구분해서 처리하는 새로운 핸들러
-    def handle_fire_and_smoke_event(self, results: list):
-        """'feat_detect_fire' 결과를 분석하여 화재 또는 연기 감지 이벤트를 개별적으로 발생시킵니다."""
+    # [수정] handle_fire_and_smoke_event 함수의 이름을 바꾸고 로직을 통합
+    def handle_fire_event(self, results: list):
+        """'feat_detect_fire' 결과를 분석하여 화재 이벤트를 발생시킵니다. (연기 포함)"""
         for item in results:
-            class_name = item.get("class_name", "")
             confidence = item.get("confidence", 0.0)
-
             if confidence > EVENT_PROB_THRESHOLD:
-                # class_name에 'smoke'가 포함되어 있으면 '연기 감지'로 처리
-                if "smoke" in class_name:
-                    self.trigger_event("연기 감지", confidence)
-                # 그 외 (예: 'flame' 등)는 '화재'로 처리
-                else:
-                    self.trigger_event("화재", confidence)
+                # class_name이 무엇이든(연기, 불꽃 등) '화재'로 간주하고 이벤트 발생
+                self.trigger_event("화재", confidence)
 
     def handle_generic_event(self, results: list, event_name: str, conf_key: str, target_class: str = None):
         for item in results:

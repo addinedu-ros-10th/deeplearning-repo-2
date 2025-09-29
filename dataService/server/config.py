@@ -8,4 +8,4 @@ DB_CONFIG = {
     'database': 'patroldb' 
 }
 
-MEDIA_STORAGE_ROOT = '/home/choi/dev_ws/project_deepL_ws/deeplearning-repo-2/dataService/Event_Video/'
+MEDIA_STORAGE_ROOT = '/home/choi/dev_ws/project_deepL_ws/deeplearning-repo-2/'
