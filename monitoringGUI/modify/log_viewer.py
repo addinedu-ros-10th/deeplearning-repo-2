@@ -25,7 +25,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_VIEWER_UI_PATH = os.path.join(BASE_DIR, "log_viewer.ui")
 
 # 로그 및 비디오 요청 서버
-LOG_SERVER_HOST = '192.168.0.23'
+LOG_SERVER_HOST = '192.168.0.25' # 서버 PC의 IP 주소로 설정 필요
 LOG_SERVER_PORT = 3401
 
 # --- 네트워크 유틸리티 함수 ---
@@ -61,16 +61,12 @@ class AnnotatedFrameDialog(QDialog):
     def __init__(self, annotated_frame: np.ndarray, parent=None):
         super().__init__(parent)
         self.setWindowTitle("detecting_image")
-        
-        # [수정] 모달 설정을 False로 변경하여 독립적으로 만듭니다.
         self.setModal(False)
-        # [추가] 창을 닫을 때 메모리에서 자동으로 삭제되도록 설정합니다.
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
         main_layout = QVBoxLayout(self)
         image_label = QLabel()
 
-        # OpenCV 이미지(BGR)를 PyQt 이미지(QPixmap)로 변환
         rgb_image = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
@@ -80,7 +76,6 @@ class AnnotatedFrameDialog(QDialog):
         image_label.setPixmap(pixmap)
         main_layout.addWidget(image_label)
 
-        # 닫기 버튼 추가
         close_button = QPushButton("닫기")
         close_button.clicked.connect(self.accept)
         main_layout.addWidget(close_button)
@@ -111,7 +106,6 @@ class LogViewerDialog(QDialog):
         self.current_page = 1
         self.items_per_page = 20
         self._initial_size_set = False
-        # [추가] 독립적으로 띄운 이미지 창들을 관리하기 위한 리스트
         self.open_frame_dialogs = []
         
     def _setup_ui_details(self):
@@ -121,12 +115,12 @@ class LogViewerDialog(QDialog):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         
         self.event_type_map = {
-            "화재": ("detect_fire", self.cb_fire),
-            "폭행": ("assault", self.cb_assault),
-            "누워있는 사람": ("fallen", self.cb_fallen),
-            "실종자": ("missing", self.cb_missing),
-            "무단 투기": ("dumping", self.cb_dumping),
-            "흡연자": ("smoke", self.cb_smoking),
+            "화재": ("feat_detect_fire", self.cb_fire),
+            "폭행": ("feat_detect_violence", self.cb_assault),
+            "쓰러진 사람": ("feat_detect_fall", self.cb_fallen),
+            "실종자": ("feat_detect_missing_person", self.cb_missing),
+            "무단 투기": ("feat_detect_trash", self.cb_dumping),
+            "흡연자": ("feat_detect_smoke", self.cb_smoking),
         }
         self.start_date_edit.setDate(QDate.currentDate().addDays(-1))
         self.end_date_edit.setDate(QDate.currentDate())
@@ -225,7 +219,8 @@ class LogViewerDialog(QDialog):
 
         self.video_capture = cv2.VideoCapture(path)
         if self.video_capture.isOpened():
-            fps = self.video_capture.get(cv2.CAP_PROP_FPS) or 30
+            # [수정] 영상 재생 프레임 속도를 20으로 고정
+            fps = 20
             self.playing_video = True
             self.video_timer.start(int(1000 / fps))
         else:
@@ -268,9 +263,7 @@ class LogViewerDialog(QDialog):
             
         dialog = AnnotatedFrameDialog(annotated_frame, self)
         
-        # [수정] 팝업창이 사라지는 것을 막기 위해 리스트에 추가하여 참조를 유지합니다.
         self.open_frame_dialogs.append(dialog)
-        # [수정] exec() 대신 show()를 호출하여 독립적인 창으로 띄웁니다.
         dialog.show()
 
     def _parse_bboxes_from_raw(self, raw_result_str: str) -> list:
@@ -381,8 +374,14 @@ class LogViewerDialog(QDialog):
             except OSError as e:
                 print(f"Error deleting temporary file: {e}")
         
-        # [추가] 로그 뷰어를 닫을 때 열려있는 모든 이미지 창도 함께 닫습니다.
         for dialog in self.open_frame_dialogs:
             dialog.close()
 
         super().closeEvent(event)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    # 로그 뷰어만 단독으로 테스트 실행할 때
+    window = LogViewerDialog()
+    window.show()
+    sys.exit(app.exec())

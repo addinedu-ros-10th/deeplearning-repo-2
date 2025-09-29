@@ -42,7 +42,7 @@ RECONNECT_DELAY_SECONDS = 5
 ALERT_SOUND_DIR = os.path.join(BASE_DIR, "alert")
 RECORDING_DIR = os.path.join(BASE_DIR, "recordings")
 VIDEO_CHUNK_SECONDS = 10
-VIDEO_FPS = 30
+VIDEO_FPS = 20
 VIDEO_FRAME_SIZE = (1280, 720)
 
 # AI 및 이벤트 설정

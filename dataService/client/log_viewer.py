@@ -49,7 +49,7 @@ class LogViewerDialog(QDialog):
         super().__init__(parent)
         self._load_ui_and_find_widgets()
 
-        self.server_host = "192.168.0.23"
+        self.server_host = "192.168.0.25"
         self.server_port = 3401
         self.filtered_log_entries = []
         
