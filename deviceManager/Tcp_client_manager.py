@@ -6,8 +6,8 @@ import time
 
 class Tcp_client_manager():
     def __init__(self):
-        # self.TCP_HOST = "192.168.0.86"
-        self.TCP_HOST = "172.20.10.8"
+        self.TCP_HOST = "192.168.0.86"
+        # self.TCP_HOST = "172.20.10.8"
         self.TCP_PORT = 1201
         self.PATROL_NUMBER = 1
         self.deviceManager_ID = 0x01
