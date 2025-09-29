@@ -3,11 +3,8 @@ import threading
 import time
 import json
 
-# 필요 시 경로 변경
 SMOKE_MODEL_PATH = "situationDetector/detect/feat_detect_smoke/best.pt"
 
-# 클래스 라벨 매핑 (모델의 names와 맞춰서 수정 가능)
-# 예: 0=smoke(흡연/연기), 1=not_smoke(비흡연)
 SMOKE_LABELS = {
     0: "smoke",
     1: "not_smoke",
@@ -161,3 +158,4 @@ def _standalone():
 
 if __name__ == "__main__":
     _standalone()
+
