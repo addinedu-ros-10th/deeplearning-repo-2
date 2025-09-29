@@ -19,6 +19,8 @@ import re
 import json
 import socket
 import threading
+import select  # 소켓의 상태를 확인하기 위해 필요
+import struct  # 
 from queue import Queue
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
@@ -108,19 +110,28 @@ class RollingRecorder:
         self.out = None
 
 class AlertDialog(QDialog):
-    def __init__(self, parent, event_type, prob):
+    # __init__ 메서드에 timestamp 인자를 추가합니다.
+    def __init__(self, parent, event_type, prob, timestamp):
         super().__init__(parent)
-        self.setWindowTitle(f"{event_type} 경고")
+        self.setWindowTitle(f"{event_type} 발생")
         self.setModal(False)
         self.setWindowModality(Qt.NonModal)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint | Qt.CustomizeWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.event_type = event_type
         self.parent_dashboard = parent
-        self.setFixedSize(300, 150)
+        
+        # [수정] 텍스트가 두 줄로 늘어나므로 높이를 약간 늘려줍니다.
+        self.setFixedSize(300, 170)
         self.blink_timer = None
+
         layout = QVBoxLayout(self)
-        message = QLabel(f"{event_type} 감지됨! (확률: {prob:.2f})")
+        
+        # [수정] 메시지에 '발생 시각'을 포함하도록 변경합니다.
+        message_text = f"{event_type} 감지됨! (확률: {prob:.2f})\n\n발생 시각: {timestamp}"
+        message = QLabel(message_text)
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter) # 텍스트 가운데 정렬
+        
         layout.addWidget(message)
         stop_button = QPushButton("확인")
         layout.addWidget(stop_button)
@@ -128,7 +139,10 @@ class AlertDialog(QDialog):
 
     def confirm_stop(self):
         if QMessageBox.question(self, "확인", "경고를 종료하시겠습니까?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            # confirm_stop을 호출할 때 dialog 인스턴스(self)를 전달하도록 수정
+#================================= 연결고리 1 =============================
             self.parent_dashboard.resolve_alert(self, self.event_type)
+#================================= 연결고리 1 =============================
             self.accept()
 
 
@@ -140,66 +154,93 @@ class TcpReceiver(QThread):
     """
     data_received = Signal(dict)  # 수신된 데이터를 담아 보낼 시그널 (dict 타입)
 
-    def __init__(self, parent=None):
+    # --- [전체 교체] command_queue를 인자로 받도록 수정 ---
+    def __init__(self, command_queue, parent=None):
         super().__init__(parent)
         self.running = True
-        self.host = 'localhost'  # 수신할 호스트 주소
-        self.port = 2401          # 수신할 포트 번호
+        self.server_host = '192.168.0.86'
+        self.server_port = 2401
+        self.command_queue = command_queue # 공유 큐를 멤버 변수로 저장
+    # --- [전체 교체] ---
+    # def __init__(self, parent=None):
+    #     super().__init__(parent)
+    #     self.running = True
+
+    #     # [수정] 접속할 서버의 주소와 포트로 변경
+    #     self.server_host = '192.168.0.86'  # Server(situationDectector)의 IP
+    #     self.server_port = 2401           # Server(situationDectector)의 Result_JSON 수신 포트
 
     def run(self):
         """스레드가 시작될 때 실행되는 메인 루프"""
-        try:
-            # 서버 소켓 생성 및 설정
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # 주소 재사용 옵션 설정
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((self.host, self.port))
-            server_socket.listen(1)
-            # 타임아웃을 설정하여 self.running 플래그를 주기적으로 확인할 수 있게 함
-            server_socket.settimeout(1.0)
-            print(f"TCP Receiver listening on {self.host}:{self.port}")
+        while self.running:
+            client_socket = None # 소켓 변수 초기화[추가]
+            try:
+                # [수정] 클라이언트 소켓 생성 및 서버에 연결 시도
+                print(f"Connecting to server {self.server_host}:{self.server_port}...")
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.connect((self.server_host, self.server_port))
+                print("Server connected.")
+                
+                full_data = b""
 
-            while self.running:
-                try:
-                    # 클라이언트 연결 대기
-                    client_socket, addr = server_socket.accept()
-                    with client_socket:
-                        print(f"Accepted connection from {addr}")
-                        full_data = b""
-                        while True:
-                            # 1024 바이트씩 데이터 수신
-                            data = client_socket.recv(1024)
-                            if not data:
-                                break
-                            full_data += data
+                # 연결이 성공하면, 연결이 끊길 때까지 계속 데이터 수신/송신
+                while self.running:
+                    # select를 사용해 읽기/쓰기 가능 상태를 0.1초 타임아웃으로 확인
+                    # 읽을 수 있는 소켓 목록, 쓸 수 있는 소켓 목록, 에러난 소켓 목록을 반환
+                    readable, writable, _ = select.select([client_socket], [client_socket], [], 0.1)
+
+                    # 1) 데이터 수신 처리 (소켓을 '읽기'가 가능할 때)
+                    if client_socket in readable:
+                        data = client_socket.recv(1024)
+                        if not data:
+                            print("서버 연결 끊김.")
+                            break # 내부 루프 탈출
                         
-                        # 수신된 데이터가 있으면 처리
-                        if full_data:
-                            try:
-                                # 수신된 바이트 데이터를 UTF-8 문자열로 디코딩
-                                json_str = full_data.decode('utf-8')
-                                # JSON 문자열을 파이썬 딕셔너리로 변환
-                                json_data = json.loads(json_str)
-                                # 파싱된 데이터를 시그널에 담아 발생시킴
-                                self.data_received.emit(json_data)
-                            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                                print(f"Error processing received data: {e}")
+                        full_data += data
+                        try:
+                            json_str = full_data.decode('utf-8')
+                            json_data = json.loads(json_str)
+                            self.data_received.emit(json_data)
+                            full_data = b""
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            # 데이터가 아직 완성되지 않은 경우, 다음 recv를 위해 대기
+                            pass
 
-                except socket.timeout:
-                    # 타임아웃 발생 시 루프를 계속 진행하여 self.running 상태를 확인
-                    continue
-                except Exception as e:
-                    print(f"TCP receiver error: {e}")
+                    # 2) 데이터 송신 처리 (소켓에 '쓰기'가 가능하고, 보낼 명령이 큐에 있을 때)
+                    if client_socket in writable and not self.command_queue.empty():
+                        try:
+                            # 큐에서 보낼 데이터를 꺼냄 (block 없이 바로)
+                            command_to_send = self.command_queue.get_nowait()
+                            client_socket.sendall(command_to_send)
+                            print(f"큐의 명령을 서버로 전송 완료: {command_to_send.hex()}")
+                        except Queue.Empty:
+                            # 큐 확인과 get 사이에 다른 스레드가 데이터를 가져간 경우를 대비
+                            pass
+
+            except Exception as e:
+                print(f"TCP 클라이언트 오류: {e}. 5초 후 재시도...")
+                time.sleep(5)
+            # except ConnectionRefusedError:
+            #     # 서버가 닫혀있거나 연결을 거부할 경우
+            #     print("Connection refused. Retrying in 5 seconds...")
+            #     time.sleep(5)
+            except Exception as e:
+                # 그 외 다른 네트워크 오류
+                print(f"TCP client error: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
         
-        finally:
-            # 스레드 종료 시 서버 소켓 정리
-            server_socket.close()
-            print("TCP Receiver stopped.")
+        print("TCP Receiver 스레드 종료.")
+    # --- [전체 교체] ---
+
+
+
+        
+        print("TCP Receiver (Client Mode) stopped.")
 
     def stop(self):
         """스레드를 안전하게 종료하기 위한 메서드"""
         self.running = False
-        print("Stopping TCP receiver thread...")
+        print("Stopping TCP client thread...")
 
 class VideoThread(QThread):
     # 프레임을 전달하기 위한 시그널 정의
@@ -241,10 +282,43 @@ class PatrolDashboard(QMainWindow):
         super().__init__()
         self.setupUi(self)
         self.log_viewer_dialog = None
-        pygame.mixer.init()
-        self.alert_sound, self.alert_channel, self.alert_active = None, None, False
+
+        # --- [추가] 명령어 전송을 위한 공유 큐 생성 ---
+        self.command_queue = Queue()
+        # --- [추가] ---
+
+
+          # Pygame 믹서 초기화
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        
+        # --- [수정] 여러 소리를 동시에 재생하기 위해 8개의 채널을 생성합니다 ---
+        pygame.mixer.set_num_channels(16)
+        
+        # --- [수정] 단일 채널 변수(self.alert_channel)를 삭제하고, 사운드 딕셔너리만 남깁니다 ---
+        self.alert_sounds = {} 
+        
+        # 이벤트 이름과 실제 사운드 파일 이름을 매핑하는 딕셔너리
+        sound_map = {
+            "화재": "fire.mp3",
+            "폭행": "violence.mp3",
+            "쓰러진 사람": "faint.mp3",
+            "실종자 발견": "missing_person.mp3"
+        }
+
+        # 매핑된 사운드 파일들을 미리 로드
+        print("--- 알람 사운드 로딩 시작 ---")
+        for event, filename in sound_map.items():
+            path = os.path.join("alert", filename)
+            if os.path.exists(path):
+                self.alert_sounds[event] = pygame.mixer.Sound(path)
+                print(f"'{path}' 로드 성공.")
+            else:
+                print(f"경고: 사운드 파일을 찾을 수 없습니다 - '{path}'")
+        print("--- 알람 사운드 로딩 완료 ---")
+
         self.open_alerts = []
         self.log_entries = []
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.dumping_model = self.smoker_model = None
         self.transform = transforms.Compose([
@@ -280,15 +354,41 @@ class PatrolDashboard(QMainWindow):
         self.thread.start() # 스레드 시작
         # --- 새로운 VideoThread 설정 ---
 
-
-        self.event_colors = {"화재":"red", "폭행":"orange", "누워있는 사람":"purple", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
+        self.event_colors = {"화재":"red", "폭행":"orange", "쓰러진 사람":"purple", "실종자":"cyan", "무단 투기":"lightgray", "흡연자":"lightgray"}
         if os.path.exists("alert.mp3"):
             self.alert_sound = pygame.mixer.Sound("alert.mp3")
             self.alert_channel = pygame.mixer.Channel(0)
-        
-        self.tcp_receiver = TcpReceiver(self)
+
+        self.event_to_code_map = {
+            "쓰러진 사람": 0,
+            "화재": 1,
+            "폭행": 2,
+            "실종자 발견": 3
+        }
+    
+        # self.tcp_receiver = TcpReceiver(self)
+        self.tcp_receiver = TcpReceiver(self.command_queue, self)
         self.tcp_receiver.data_received.connect(self.process_tcp_data)
         self.tcp_receiver.start()
+
+        # --- [추가] AI 모델의 영문 클래스 이름을 UI의 한글 이벤트 이름으로 변환하기 위한 딕셔너리 ---
+        self.class_name_map = {
+            # 화재 관련 이벤트
+            "detect_fire": "화재",
+            "detect_fire_danger_smoke": "화재",
+            "detect_fire_general_smoke": "화재",
+            
+            # 폭행 관련 이벤트 (예시)
+            "violence": "폭행",
+            
+            # 쓰러진 사람 관련 이벤트 (예시)
+            "fallen": "쓰러진 사람",
+            
+            # (필요에 따라 다른 AI 탐지 클래스 이름과 한글 이벤트 이름을 여기에 추가)
+        }
+
+
+
 
     def setupUi(self, MainWindow):
         MainWindow.setWindowTitle("AURA 관제 대시보드")
@@ -309,15 +409,18 @@ class PatrolDashboard(QMainWindow):
         self.main_layout.addWidget(control_panel, 3)
         self.log_open_button = QPushButton("로그 뷰어 및 동영상 재생")
         self.control_layout.addWidget(self.log_open_button)
-        trigger_groupbox = QGroupBox("수동 이벤트 발생")
-        button_layout = QVBoxLayout(trigger_groupbox)
-        self.trigger_buttons = {}
-        event_names = ["폭행", "화재", "누워있는 사람", "실종자 발견", "무단 투기", "흡연자"]
-        for name in event_names:
-            btn = QPushButton(f"{name} 발생")
-            self.trigger_buttons[name] = btn
-            button_layout.addWidget(btn)
-        self.control_layout.addWidget(trigger_groupbox)
+
+        # 수동 버튼 삭제
+        # trigger_groupbox = QGroupBox("수동 이벤트 발생")
+        # button_layout = QVBoxLayout(trigger_groupbox)
+        # self.trigger_buttons = {}
+        # event_names = ["폭행", "화재", "쓰러진 사람", "실종자 발견", "무단 투기", "흡연자"]
+        # for name in event_names:
+        #     btn = QPushButton(f"{name} 발생")
+        #     self.trigger_buttons[name] = btn
+        #     button_layout.addWidget(btn)
+        # self.control_layout.addWidget(trigger_groupbox)
+
         log_label = QLabel("통합 이벤트 로그")
         font = QFont(); font.setPointSize(12); font.setBold(True)
         log_label.setFont(font)
@@ -325,8 +428,10 @@ class PatrolDashboard(QMainWindow):
         self.log_browser = QTextBrowser()
         self.control_layout.addWidget(self.log_browser)
         self.log_open_button.clicked.connect(self.open_log_viewer)
-        for name, btn in self.trigger_buttons.items():
-            btn.clicked.connect(lambda checked, n=name: self.trigger_event(n))
+
+        # 수동 버튼 삭제
+        # for name, btn in self.trigger_buttons.items():
+        #     btn.clicked.connect(lambda checked, n=name: self.trigger_event(n))
 
     # def update_frame(self):
     #     ret, frame = self.cap.read()
@@ -381,7 +486,15 @@ class PatrolDashboard(QMainWindow):
         prob = random.uniform(0.7, 0.99)
         self.trigger_event(event_type, prob, is_auto=True)
 
+    # 30초 후 정지
+    def stop_sound_on_channel(self, channel):
+        """지정된 채널에서 재생 중인 사운드를 중지하는 슬롯"""
+        if channel and channel.get_busy():
+            channel.stop()
+            print(f"Channel {channel} 재생이 30초 후 자동으로 중지되었습니다.")        
+
     def trigger_event(self, event_type, prob=None, is_auto=False):
+        # timestamp를 메서드 시작 부분에서 생성
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         prob = prob if prob is not None else random.random()
         color = self.event_colors.get(event_type, "red")
@@ -390,22 +503,22 @@ class PatrolDashboard(QMainWindow):
         self.log_browser.append(html_log)
         self.log_entries.append({"timestamp": timestamp, "message": log_message})
 
-        # [수정] 아래 부분을 변경합니다.
-        if event_type in ["폭행", "화재", "누워있는 사람", "실종자 발견"]:
-            # 현재 경고음이 울리고 있지 않을 때만 새로 재생
-            if self.alert_sound and self.alert_channel and not self.alert_channel.get_busy():
-                # maxtime=5000 옵션으로 5초 동안만 재생
-                self.alert_channel.play(self.alert_sound, maxtime=5000)
+        if event_type in self.alert_sounds:
+            # [수정] AlertDialog를 생성할 때 timestamp 변수를 전달합니다.
+            dialog = AlertDialog(self, event_type, prob, timestamp)
             
-                
-            dialog = AlertDialog(self, event_type, prob)
+            channel = pygame.mixer.find_channel()
+            if channel:
+                sound_to_play = self.alert_sounds[event_type]
+                channel.play(sound_to_play, loops=-1)
+                print(f"Channel {channel}에서 '{event_type}' 알람 시작.")
+                dialog.alert_channel = channel
+            else:
+                print("경고: 모든 오디오 채널이 사용 중입니다.")
+                dialog.alert_channel = None
+            
             self.open_alerts.append(dialog)
             self.place_alert_dialog(dialog)
-            dialog.blink_timer = QTimer(dialog)
-            dialog.blinking = True
-            dialog.original_title = dialog.windowTitle()
-            dialog.blink_timer.timeout.connect(lambda d=dialog: self.update_dialog_blink(d))
-            dialog.blink_timer.start(500)
             dialog.show()
 
     def update_dialog_blink(self, dialog):
@@ -422,30 +535,109 @@ class PatrolDashboard(QMainWindow):
             dialog.setWindowTitle(f"! {dialog.original_title} !")
 
     def place_alert_dialog(self, dialog):
+        # 1. 첫 번째 경고창이 표시될 시작 위치
         start_pos = QPoint(100, 20)
-        cascade_offset = QPoint(40, 40)
-        row_y_offset = 60
-        cascade_per_row = 10
+        # 2. 다음 경고창이 이전 창으로부터 얼마나 떨어질지 결정하는 대각선 간격
+        cascade_offset = QPoint(110, 100)
+        
+        # --- [수정] 아래 변수들을 추가 및 변경합니다 ---
+        # 3. 한 줄에 표시할 최대 창 개수
+        cascade_per_row = 10 # 예시로 10개로 줄임 (화면에 맞게 조절)
+        
+        # 4. 다음 줄로 넘어갈 때의 좌표 변화량
+        row_x_offset = -30   # 왼쪽으로 30px 이동
+        row_y_offset = 60    # 아래쪽으로 60px 이동
+        # --- 여기까지 ---
+
+        # 현재 몇 번째 창인지 계산
         num_open_alerts = len(self.open_alerts) - 1
+        # 몇 번째 줄, 몇 번째 칸에 위치해야 하는지 계산
         current_row = num_open_alerts // cascade_per_row
         current_col = num_open_alerts % cascade_per_row
+
+        # --- [수정] 최종 위치 계산 로직 변경 ---
+        # 1. 기본 대각선 위치 계산
         new_pos = start_pos + (current_col * cascade_offset)
+        
+        # 2. 줄바꿈에 따른 x, y 좌표 추가 이동
+        #    - current_row가 1이면(두 번째 줄), x는 -30, y는 +60 만큼 추가로 이동합니다.
+        new_pos.setX(new_pos.x() + (current_row * row_x_offset))
         new_pos.setY(new_pos.y() + (current_row * row_y_offset))
+        
+        # 최종 계산된 위치로 경고창을 이동
         dialog.move(new_pos)
 
+
+
     def resolve_alert(self, dialog_to_remove, event_type):
+
+#============= --- 연결 고리 2 ----- [추가] 알람 종료 명령을 보내는 메서드 호출 ---
+        self.send_stop_alarm_command(event_type)
+#============= --- 연결 고리 2 -----=======================================        
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"<font color='green'>{timestamp} - {event_type} 상황 종료됨</font>"
         self.log_browser.append(log_message)
         self.log_entries.append({"timestamp": timestamp, "message": f"{event_type} 상황 종료됨"})
+        
+        # --- [수정] 닫히는 다이얼로그에 연결된 채널의 소리만 중지 ---
+        # dialog_to_remove 객체에 alert_channel 속성이 있는지 확인
+        if hasattr(dialog_to_remove, 'alert_channel') and dialog_to_remove.alert_channel:
+            dialog_to_remove.alert_channel.stop()
+            print(f"Channel {dialog_to_remove.alert_channel}의 알람을 중지했습니다.")
+        # --- 여기까지 ---
+
         if dialog_to_remove in self.open_alerts:
             self.open_alerts.remove(dialog_to_remove)
-        QTimer.singleShot(100, self.check_and_stop_sound)
+        
+        # [삭제] 더 이상 check_and_stop_sound 함수를 호출할 필요가 없습니다.
+        # QTimer.singleShot(100, self.check_and_stop_sound)
+
 
     def check_and_stop_sound(self):
         alert_dialogs_open = any(isinstance(d, AlertDialog) and d.isVisible() for d in self.open_alerts)
         if not alert_dialogs_open and self.alert_channel and self.alert_channel.get_busy():
             self.alert_channel.stop()
+
+        # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
+    def send_stop_alarm_command(self, event_type):
+        """monitoringGUI에서 situationDetector로 '알람 종료' 명령을 전송합니다."""
+        # 두번 열어서 되지 않았다
+        # TARGET_IP = "192.168.0.86"
+        # TARGET_IP = "127.0.0.1"  # 테스트용 localhost
+        # TARGET_PORT = 2401
+
+        SOURCE_ID = 4          # 보내는 곳: monitoringGUI (0x04)
+        DESTINATION_ID = 2     # 받는 곳: situationDetector (0x02)
+        COMMAND_STOP_ALARM = 1 # 명령: 알람 종료 (0x01)
+
+
+        alarm_type_code = self.event_to_code_map.get(event_type, 255)
+        if alarm_type_code == 255:
+            print(f"경고: {event_type}에 해당하는 알람 종료 코드를 찾을 수 없습니다.")
+            return
+
+        # 데이터를 바이트로 패킹
+        payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
+
+        # 직접 보내지 않고, 공유 큐에 데이터를 넣습니다.
+        self.command_queue.put(payload)
+        print(f"알람 종료 명령을 전송 큐에 추가했습니다: {payload.hex()}")
+
+        # try:
+        #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        #         sock.settimeout(2) 
+        #         sock.connect((TARGET_IP, TARGET_PORT))
+                
+        #         # [수정] 'BBBB': 4개의 unsigned char 형식으로 데이터를 패킹
+        #         payload = struct.pack('BBBB', SOURCE_ID, DESTINATION_ID, COMMAND_STOP_ALARM, alarm_type_code)
+                
+        #         sock.send(payload)
+        #         print(f"알람 종료 명령 전송 성공: {payload.hex()}")
+
+        # except Exception as e:
+        #     print(f"알람 종료 명령 전송 실패: {e}")
+        # --- [추가] 알람[경고] 종료 명령을 보내는 클래스 메서드 ---
+
 
     def open_log_viewer(self):
         if self.log_viewer_dialog is None or not self.log_viewer_dialog.isVisible():
@@ -454,32 +646,49 @@ class PatrolDashboard(QMainWindow):
         self.log_viewer_dialog.activateWindow()
 
     def process_tcp_data(self, json_data):
+        """수신된 TCP JSON 데이터를 처리하여 이벤트를 발생시키는 슬롯"""
         print("TCP 데이터 처리 시작:", json_data)
         timestamp = json_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        for detection in json_data.get("detection", []):
-            event_type = detection["class_name"]
-            confidence = detection["confidence"]
-            self.trigger_event(event_type, confidence, is_auto=True)
+
+        # 1. 'detection' 딕셔너리를 가져옵니다.
+        detection_features = json_data.get("detection", {})
+
+        # 2. 딕셔너리 내부의 모든 값(탐지 결과 리스트)을 순회합니다.
+        #    (예: "feat_detect_fire" 리스트, "feat_detect_violence" 리스트 등)
+        for feature_results in detection_features.values():
+            # feature_results가 리스트 형태일 경우에만 처리
+            if isinstance(feature_results, list):
+                # 3. 각 탐지 결과 리스트 내부의 개별 객체를 순회합니다.
+                for detection in feature_results:
+                    # AI 모델이 보낸 영문 클래스 이름을 가져옵니다.
+                    eng_class_name = detection.get("class_name")
+                    
+                    # 4. __init__에서 정의한 맵을 사용해 한글 이벤트 이름으로 변환합니다.
+                    event_type = self.class_name_map.get(eng_class_name)
+                    
+                    # 5. 매핑된 한글 이벤트 이름이 있을 경우에만 로그/경고를 생성합니다.
+                    if event_type:
+                        confidence = detection.get("confidence", 0.0)
+                        # trigger_event를 호출하여 로그 기록, 팝업, 알람 등을 처리합니다.
+                        self.trigger_event(event_type, confidence, is_auto=True)
+
+        # 로그 뷰어가 열려있을 경우, 새로운 로그를 반영하여 업데이트합니다.
         if self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
             self.log_viewer_dialog.all_log_entries = self.log_entries
             self.log_viewer_dialog.request_logs_from_server()
 
-    # def closeEvent(self, event):
-    #     print("Closing application...")
-    #     self.timer.stop()
-    #     for w in QApplication.topLevelWidgets():
-    #         if isinstance(w, QDialog):
-    #             w.close()
 
     # closeEvent 수정
     def closeEvent(self, event):
         print("Closing application...")
         # self.timer.stop() # 기존 타이머는 없으므로 삭제 또는 주석 처리
         self.thread.stop() # 비디오 스레드를 안전하게 종료
-        
+        self.tcp_receiver.stop()
+
         for w in QApplication.topLevelWidgets():
             if isinstance(w, QDialog):
                 w.close()
+
         print("Stopping TCP receiver thread...")
         self.tcp_receiver.stop()
         try:
@@ -492,11 +701,12 @@ class PatrolDashboard(QMainWindow):
             self.tcp_receiver.terminate()
         print("TCP thread stopped.")
         print("Releasing resources...")
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
+        # if self.cap and self.cap.isOpened():
+        #     self.cap.release()
         self.recorder.stop()
         pygame.mixer.quit()
         print("Resources released.")
+
         super().closeEvent(event)
 
 if __name__ == '__main__':
