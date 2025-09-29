@@ -2,14 +2,20 @@ import cv2
 import queue
 import time
 import threading
+import datetime
 from typing import List
 
 def receive_cv_video(analyzer_input_queue : List[queue.Queue],
+                    raw_frame_queue : queue.Queue,
                     shutdown_event : threading.Event):
   # Create a VideoCapture object. 0 refers to the default webcam.
   # If you have multiple webcams, you might need to try 1, 2, etc.
-  cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
-  # cap = cv2.VideoCapture("http://192.168.0.149:5000/stream?src=0")
+
+  # 로컬 테스트
+  cap = cv2.VideoCapture(0)
+
+  # 실제 환경
+  # cap = cv2.VideoCapture("http://192.168.0.180:5000/stream?src=0")
 
   # Check if the webcam is opened successfully
   if not cap.isOpened():
@@ -37,9 +43,15 @@ def receive_cv_video(analyzer_input_queue : List[queue.Queue],
       "frame" : frame,
       "frame_count" : frame_count,
       "frame_time" : frame_time,
-      "patrol_number" : 0x00,
+      "patrol_number" : 0x01,
+      
+      # 시간정보 추가
+      "timestamp" : datetime.datetime.now().isoformat()
     }
     
+
+    # 이벤트 영상 데이터 생성을 위해 프레임 저장
+    raw_frame_queue.put(data_packet)
 
     # analyzer_input_queue에 프레임 저장
     for q in analyzer_input_queue:

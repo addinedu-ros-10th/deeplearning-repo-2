@@ -51,9 +51,9 @@ def _handle_send(conn: socket.socket, addr: tuple, final_output_queues: queue.Qu
             except (socket.error, BrokenPipeError) as e:
                 print(f"situationDetector (TCP GUI Communicator) : [{addr}] 소켓 오류 발생: {e}. 송신 스레드를 종료합니다.")
                 break # 소켓 오류 시 루프 탈출
-            finally:
+            # finally:
                 # 테스트 코드 : 전송한 데이터 그대로 출력
-                print(ai_result)
+                # print(ai_result)
     except Exception as e:
         if not shutdown_event.is_set():
             print(f"situationDetector (TCP GUI Communicator) : [{addr}] 송신 스레드 오류: {e}")

@@ -5,17 +5,16 @@ import queue
 
 from situationDetector.receiver.broadcast_receiver import receive_cv_video
 
-# 
-from situationDetector.sender.tcp_main_sender import send_tcp_data_to_main
-from situationDetector.sender.udp_main_sender import send_udp_frame_to_main
-
 # 통합된 통신 모듈 import
 from situationDetector.server.tcp_dm_server import dm_server_run
 # from situationDetector.server.tcp_gui_server import gui_server_run_archive
 from situationDetector.server.tcp_gui_server import gui_server_run
 from situationDetector.server.tcp_ds_server import ds_server_run
 
-from situationDetector.detect.feat_detect_fire import run_fire_detect
+from situationDetector.detect.detect_fire import run_fire_detect
+from situationDetector.detect.find_missing import run_find_missing
+from situationDetector.detect.detect_fall import run_fall_detect
+from situationDetector.detect.detect_smoke import run_smoke_detect
 
 from situationDetector.videoManager import make_event_video
 
@@ -50,12 +49,13 @@ class SituationDetector:
     # 1. 프레임을 소비하는 스레드 초기화
     self.ANALYZER_CONFIG = [
         # 분석 모델 스레드 (6가지)
-        # {"name" : "feat_detect_fall", "target" : run_fall_detect},
+        {"name" : "feat_find_missing", "target" : run_find_missing},
+        {"name" : "feat_detect_fall", "target" : run_fall_detect},
         {"name" : "feat_detect_fire", "target" : run_fire_detect},
-        # {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
+        {"name" : "feat_detect_smoke", "target" : run_smoke_detect},
+        
         # {"name" : "feat_detect_trash", "target" : run_trash_detect},
         # {"name" : "feat_detect_violence", "target" : run_violence_detect},
-        # {"name" : "feat_detect_weapon", "target" : run_weapon_detect},
     ]
     
     # 2. 최종 분석 결과를 받는 클라이언트 목록
@@ -66,12 +66,12 @@ class SituationDetector:
 
     # 분석기 이름과 알람 타입 ID 매핑 (알람 30초 무시 요청 처리)
     self.ANALYZER_TO_ALARM_TYPE = {
-        "feat_detect_fire": 0x00,
-        "feat_detect_fall": 0x01,
-        "feat_detect_smoke": 0x02,
-        "feat_detect_trash": 0x03,
-        "feat_detect_violence": 0x04,
-        "feat_detect_weapon": 0x05,
+        "feat_detect_fall": 0x00,
+        "feat_detect_fire": 0x01,
+        "feat_detect_violence": 0x02,
+        "feat_find_missing": 0x03,
+        # "feat_detect_smoke": 0x04,
+        # "feat_detect_trash": 0x05,
     }
     
     self.NUM_ANALYZERS = len(self.ANALYZER_CONFIG)
@@ -88,7 +88,9 @@ class SituationDetector:
       # (<프레임 카운트>, <영상 시각>, <프레임 데이터>)
     self.raw_frame_queue = queue.Queue(maxsize=10)    
     self.aggregation_queue = queue.Queue() # 분석 결과를 모으는 큐
-    self.final_output_queue = queue.Queue() # Main Server에 전송할 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
+    
+    self.video_manager_event_queue = queue.Queue() # VideoManager 전용 이벤트 큐
+    self.final_output_queue = queue.Queue() # # DeviceManager 전용 이벤트 큐 (6가지 기능에 대한 분석이 완료될 시 저장)
     self.dm_event_queue = queue.Queue() # final_output_queue와 동일한 데이터를 dM으로 보내는 신호 생성용 큐
 
     # 4. 모델 분석 결과 데이터 초기화
@@ -181,6 +183,10 @@ class SituationDetector:
     
     while not self.shutdown_event.is_set():
       try:
+        # 이번 처리 주기에서 GUI 해제 이벤트가 수신되었는지 확인하기 위한 플래그
+          # True일 경우에 감지된 객체가 0개인 경우에도 dM으로 보내는 이벤트 해제 신호를 생성하도록 함
+        clear_event_received_this_cycle = False
+        
         # [1. 알람 해제 기능] 이벤트 해제 큐 확인
         try:
           current_time = time.time()
@@ -188,9 +194,11 @@ class SituationDetector:
           clear_request = self.event_clear_queue.get_nowait()
           alarm_type_to_clear = clear_request.get("alarm_type")
           if alarm_type_to_clear is not None:
-                print(f"situationDetector (Aggregator): {alarm_type_to_clear} 타입 알람 해제 요청 수신. 30초간 무시합니다.")
-                # 현재 시간 + 30초로 무시 종료 시간 설정
-                self.ignore_events[alarm_type_to_clear] = current_time + 30
+            print(f"situationDetector (Aggregator): {alarm_type_to_clear} 타입 알람 해제 요청 수신. 30초간 무시합니다.")
+            # 현재 시간 + 30초로 무시 종료 시간 설정
+            self.ignore_events[alarm_type_to_clear] = current_time + 30
+            # 해제 이벤트가 수신되었음을 플래그에 표시
+            clear_event_received_this_cycle = True
         except queue.Empty:
             pass # 처리할 해제 요청 없음
 
@@ -198,14 +206,14 @@ class SituationDetector:
         current_time = time.time()
         expired_alarms = [alarm for alarm, expiry_time in self.ignore_events.items() if current_time > expiry_time]
         for alarm in expired_alarms:
-            print(f"situationDetector (Aggregator): {alarm} 타입 알람 무시 기간 만료.")
-            del self.ignore_events[alarm] # GUI 이벤트 해제 요청 삭제
+          print(f"situationDetector (Aggregator): {alarm} 타입 알람 무시 기간 만료.")
+          del self.ignore_events[alarm] # GUI 이벤트 해제 요청 삭제
 
         # [2. 30초 재인식 방지 기능] 만료된 재인식 방지 이벤트 정리
         expired_received = [alarm for alarm, expiry_time in self.received_events.items() if current_time > expiry_time]
         for alarm in expired_received:
-            print(f"situationDetector (Aggregator): {alarm} 타입 이벤트 재인식 방지 기간 만료.")
-            del self.received_events[alarm] # 재인식 방지 데이터 정보 삭제
+          print(f"situationDetector (Aggregator): {alarm} 타입 이벤트 재인식 방지 기간 만료.")
+          del self.received_events[alarm] # 재인식 방지 데이터 정보 삭제
       
         # result_package 언패킹
         result_package = self.aggregation_queue.get(timeout=1.0)
@@ -216,10 +224,10 @@ class SituationDetector:
         # [1. 알람 해제 기능] 현재 분석 결과가 무시 대상인지 확인
         alarm_type = self.ANALYZER_TO_ALARM_TYPE.get(analyzer_name)
         if alarm_type is not None and alarm_type in self.ignore_events:
-            # 감지 결과를 0으로 만들어 무시 처리
-            print(f"situationDetector (Aggregator): 활성화된 해제 요청에 따라 {analyzer_name}의 감지 결과를 무시합니다.")
-            result_package["detection_count"] = 0
-            result_package["detection"] = []
+          # 감지 결과를 0으로 만들어 무시 처리
+          # print(f"situationDetector (Aggregator): 활성화된 해제 요청에 따라 {analyzer_name}의 감지 결과를 무시합니다.")
+          result_package["detection_count"] = 0
+          result_package["detection"] = []
         
         # 2. 버퍼에 해당 타임스탬프가 없으면 새로 생성
         if timestamp not in results_buffer:
@@ -259,8 +267,8 @@ class SituationDetector:
 
               # [2. 30초 재인식 방지 기능] 새로운 이벤트이므로 재인식 방지 목록에 추가
               if current_alarm_type is not None:
-                  print(f"situationDetector (Aggregator): {name} 이벤트 감지. 30초간 재인식 방지를 시작합니다.")
-                  self.received_events[current_alarm_type] = time.time() + 3
+                print(f"situationDetector (Aggregator): {name} 이벤트 감지. 30초간 재인식 방지를 시작합니다.")
+                self.received_events[current_alarm_type] = time.time() + 30
 
           # 5. 최종 json 데이터 생성
           agg_json_data = {
@@ -274,9 +282,18 @@ class SituationDetector:
           # print(agg_json_data)
 
           # 6. json 형태로 final_output_queue에 저장
-          self.final_output_queue.put(agg_json_data)
+          self.video_manager_event_queue.put(agg_json_data)   # VideoManager 전용 이벤트 큐
+
+
+          # self.final_output_queue.put(agg_json_data)          # DeviceManager 전용 이벤트 큐
+          # 조건 1: 감지된 이벤트가 있을 때 (final_detections가 비어있지 않음)
+          # 조건 2: 이번 주기에 GUI 해제 신호를 받았을 때 (clear_event_received_this_cycle이 True)
+          if final_detections or clear_event_received_this_cycle: # final_detections 딕셔너리가 비어있지 않을 때만 True
+            self.final_output_queue.put(agg_json_data)
+            print(f"DEBUG [Aggregator]: Event detected! Sending to dM queue. Data: {agg_json_data}")
+
           
-              # analyzer_input_queue에 프레임 저장
+          # analyzer_input_queue에 프레임 저장
           for q in self.final_output_queues:
             if q.full():
               q.get() # 큐가 꽉 차있으면 이전 프레임을 버리고 새 것으로 교체 작업
@@ -365,7 +382,7 @@ class SituationDetector:
     # 7. 이벤트 발생 시 전후 30초 영상을 생성하는 스레드
     video_manager_thread = threading.Thread(
         target=make_event_video,
-        args=(self.final_output_queue,     # 이벤트 감지용 큐
+        args=(self.video_manager_event_queue,     # 이벤트 감지용 큐
               self.raw_frame_queue,        # 원본 영상 프레임 수신용 큐
               self.event_video_queue,      # 생성된 이벤트 영상을 보낼 큐
               self.shutdown_event),
@@ -450,3 +467,6 @@ class SituationDetector:
 if __name__ == "__main__":
   sd = SituationDetector()
   sd.run()
+
+
+

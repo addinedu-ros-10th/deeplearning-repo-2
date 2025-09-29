@@ -12,6 +12,7 @@ import struct
 
 # 통신 설정
 TCP_HOST = '192.168.0.25'
+# TCP_HOST = '192.168.0.23'
 TCP_PORT = 2301
 
 def _handle_send(sock: socket.socket, 

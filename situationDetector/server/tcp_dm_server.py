@@ -10,7 +10,7 @@ import struct
 from typing import Dict
 
 # 통신 설정
-TCP_HOST = '172.20.10.8'  # situationDetector 자신의 IP 주소
+TCP_HOST = '192.168.0.86'  # situationDetector 자신의 IP 주소
 TCP_PORT = 1201         # deviceManager와 통신할 단일 포트
 
 # 수신 데이터 헤더 정보
@@ -156,19 +156,24 @@ def _handle_send(conn: socket.socket,
                 alarm_type = 0 # 이벤트 없음
                 
                 # 이벤트 우선 순위 : fire -> smoke -> ....
-                
-                # event 딕셔너리에 'detection' 내용이 있는지 확인
-                if event.get('detection'):
+
+                if len(ignore_events) != 0: # 알람해제 이벤트가 진행이면
+                    alarm_type = 255 # 알람 해제중 신호로 설정
+                                
+                # 알람해제 이벤트가 없으면 감지된 이벤트 값으로 alarm_type 할당
+                elif event.get('detection'):
+                # elif event.get('detection'):
                     detection_data = event['detection']
                     if 'feat_detect_fire' in detection_data:
                         alarm_type = 1 # 화재 경고
-                    elif 'feat_detect_assault' in detection_data: # 폭행 감지 키(가정)
+                    elif 'feat_detect_assault' in detection_data:
                         alarm_type = 2 # 폭행 경고
-                    elif 'feat_detect_littering' in detection_data: # 무단투기 감지 키(가정)
+                    elif 'feat_detect_trash' in detection_data:
                         alarm_type = 3 # 무단투기 경고
-                
-                if len(ignore_events) != 0: # 알람해제 이벤트가 진행이면
-                    alarm_type = 255 # 알람 해제중 신호로 설정
+                    elif 'feat_detect_smoke' in detection_data:
+                        alarm_type = 3 # 흡연자 경고
+
+                # print(alarm_type)
                 
                 data_packet = struct.pack('>BBBB', SOURCE, DESTINATION, patrol_number, alarm_type)
                 
