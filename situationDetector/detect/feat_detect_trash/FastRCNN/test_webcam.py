@@ -3,7 +3,7 @@ import torch
 import torchvision
 import cv2
 from PIL import Image
-from train import get_model
+from situationDetector.detect.feat_detect_trash.hold.train_human_trash import get_model
 import torchvision.transforms.functional as F
 
 def run_webcam_inference():
