@@ -10,7 +10,7 @@ from collections import OrderedDict, deque  # 파이썬의 기본 라이브-러�
 
 # 우리가 만든 train.py 파일에서 get_model 함수를 불러옵니다.
 # 이 함수는 Faster R-CNN 모델의 구조를 정의해줍니다.
-from train import get_model
+from situationDetector.detect.feat_detect_trash.hold.train_human_trash import get_model
 
 # --- 1. 객체 추적기 (Centroid Tracker) 클래스 ---
 # 이 클래스는 화면에 나타난 객체들에게 각각 번호표(ID)를 붙여주고,

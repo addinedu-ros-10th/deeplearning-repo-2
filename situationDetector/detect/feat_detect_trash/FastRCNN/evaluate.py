@@ -1,7 +1,7 @@
 import os
 import torch
 import torchvision
-from train import CustomDataset, get_transform, collate_fn, get_model # 기존 train.py에서 필요한 함수들을 가져옵니다.
+from situationDetector.detect.feat_detect_trash.hold.train_human_trash import CustomDataset, get_transform, collate_fn, get_model # 기존 train.py에서 필요한 함수들을 가져옵니다.
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 def evaluate():

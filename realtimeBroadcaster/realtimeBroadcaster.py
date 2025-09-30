@@ -19,5 +19,5 @@ if __name__ == '__main__' :
     print('Wandlab CV - version ' + version )
     print('------------------------------------------------')
     
-    app.run( host='0.0.0.0', port=5100 )
+    app.run( host='0.0.0.0', port=5000 )
     # app.run( host='192.168.0.149', port=5000 )
