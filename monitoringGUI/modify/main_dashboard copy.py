@@ -28,7 +28,7 @@ from PyQt6 import uic
 
 from log_viewer import LogViewerDialog
 
-# --- (상수, 헬퍼 클래스 등 대부분 변경 없음) ---
+# --- 상수 정의 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAIN_UI_PATH = os.path.join(BASE_DIR, "main_dashboard.ui")
 
@@ -49,8 +49,11 @@ VIDEO_FRAME_SIZE = (1280, 720)
 FRAME_BUFFER_SIZE = 16
 EVENT_PROB_THRESHOLD = 0.6
 
+# --- UI 클래스 로드 ---
 form_class = uic.loadUiType(MAIN_UI_PATH)[0]
 
+
+# --- 헬퍼 클래스 ---
 class AspectRatioWidget(QWidget):
     def __init__(self, parent: QWidget = None, aspect_ratio: float = 16.0/9.0):
         super().__init__(parent)
@@ -146,6 +149,7 @@ class AlertDialog(QDialog):
 
 class TcpReceiver(QThread):
     data_received = pyqtSignal(dict)
+
     def __init__(self, command_queue: Queue, parent: QWidget = None):
         super().__init__(parent)
         self.command_queue = command_queue
@@ -168,18 +172,30 @@ class TcpReceiver(QThread):
                     print(f"Connection failed: {e}")
                     self.client_socket.close()
                     time.sleep(RECONNECT_DELAY_SECONDS)
-            if not self.running: break
+
+            if not self.running:
+                break
+
             buffer = ""
             decoder = json.JSONDecoder()
+            
             while self.running and connected:
                 try:
-                    readable, _, _ = select.select([self.client_socket], [], [], 0.1)
+                    readable, writable, exceptional = select.select(
+                        [self.client_socket], [self.client_socket], [self.client_socket], 0.1)
+
+                    if exceptional:
+                        print("Socket connection error.")
+                        connected = False
+                        continue
+
                     if readable:
                         data = self.client_socket.recv(4096)
                         if not data:
                             print("Server connection closed.")
                             connected = False
                             continue
+                        
                         buffer += data.decode('utf-8', errors='ignore')
                         while True:
                             try:
@@ -188,18 +204,22 @@ class TcpReceiver(QThread):
                                 buffer = buffer[end_pos:].lstrip()
                             except json.JSONDecodeError:
                                 break
-                    if not self.command_queue.empty():
+                    
+                    if writable and not self.command_queue.empty():
                         command = self.command_queue.get_nowait()
                         self.client_socket.sendall(command)
                         print(f"Command sent to server: {command.hex()}")
+
                 except (socket.error, Empty) as e:
                     print(f"Data exchange error: {e}")
                     connected = False
                 except Exception as e:
                     print(f"An unexpected error occurred: {e}")
                     connected = False
+
             if self.client_socket:
                 self.client_socket.close()
+
         print("TCP Receiver thread stopped.")
 
     def stop(self):
@@ -208,11 +228,14 @@ class TcpReceiver(QThread):
             try:
                 self.client_socket.shutdown(socket.SHUT_RDWR)
                 self.client_socket.close()
-            except OSError: pass
+            except OSError:
+                pass
         print("Stopping TCP client thread...")
+
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
+
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.video_source = VIDEO_STREAM_URL
@@ -236,11 +259,13 @@ class VideoThread(QThread):
         self._run_flag = False
         self.wait()
 
+
 # --- 메인 대시보드 클래스 ---
 class PatrolDashboard(QMainWindow, form_class):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        
         self._init_settings()
         self._init_custom_widgets()
         self._init_pygame()
@@ -254,21 +279,26 @@ class PatrolDashboard(QMainWindow, form_class):
         self.log_entries = []
         self.frame_buffer = deque(maxlen=FRAME_BUFFER_SIZE)
         self.recorder = RollingRecorder()
-        self.live_bboxes = []
         
-        self.event_colors = { "화재": "red", "폭행": "orange", "쓰러진 사람": "purple", "실종자 발견": "blue", "무단 투기": "gray", "흡연자": "darkgray" }
-        
-        # --- [핵심 수정 1] AI 기능 이름과 BGR 색상값을 매핑하는 딕셔너리 추가 ---
-        self.feature_to_color_map = {
-            "feat_detect_fire": (0, 0, 255),          # 빨간색
-            "feat_detect_violence": (0, 165, 255),   # 주황색
-            "feat_detect_fall": (128, 0, 128),     # 보라색
-            "feat_detect_missing_person": (255, 0, 0),# 파란색
-            "feat_detect_trash": (128, 128, 128),    # 회색
-            "feat_detect_smoke": (169, 169, 169)     # 어두운 회색
+        # [수정] '연기 감지' 색상 제거
+        self.event_colors = {
+            "화재": "red", 
+            "폭행": "orange", 
+            "쓰러진 사람": "purple",
+            "실종자 발견": "blue", 
+            "무단 투기": "gray", 
+            "흡연자": "darkgray",
         }
-
-        self.event_to_code_map = { "화재": 0, "쓰러진 사람": 1, "흡연자": 2, "무단 투기": 3, "폭행": 4, "실종자 발견": 255 }
+        
+        # [수정] '연기 감지' 이벤트 코드 제거
+        self.event_to_code_map = {
+            "화재": 0, 
+            "쓰러진 사람": 1, 
+            "흡연자": 2,
+            "무단 투기": 3, 
+            "폭행": 4, 
+            "실종자 발견": 255,
+        }
 
     def _init_custom_widgets(self):
         self.video_widget = AspectRatioWidget()
@@ -280,7 +310,14 @@ class PatrolDashboard(QMainWindow, form_class):
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
         pygame.mixer.set_num_channels(16)
         self.alert_sounds = {}
-        sound_map = { "화재": "fire.mp3", "폭행": "violence.mp3", "쓰러진 사람": "faint.mp3", "실종자 발견": "missing_person.mp3" }
+        
+        # [수정] '연기 감지' 사운드 파일 제거
+        sound_map = {
+            "화재": "fire.mp3", # 연기 감지 시에도 이 사운드가 사용됩니다.
+            "폭행": "violence.mp3",
+            "쓰러진 사람": "faint.mp3", 
+            "실종자 발견": "missing_person.mp3",
+        }
         print("--- Loading alert sounds ---")
         for event, filename in sound_map.items():
             path = os.path.join(ALERT_SOUND_DIR, filename)
@@ -295,6 +332,7 @@ class PatrolDashboard(QMainWindow, form_class):
         self.video_thread = VideoThread(self)
         self.video_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.start()
+
         self.tcp_receiver = TcpReceiver(self.command_queue, self)
         self.tcp_receiver.data_received.connect(self.process_tcp_data)
         self.tcp_receiver.start()
@@ -309,24 +347,12 @@ class PatrolDashboard(QMainWindow, form_class):
             frame = np.zeros((VIDEO_FRAME_SIZE[1], VIDEO_FRAME_SIZE[0], 3), dtype=np.uint8)
             cv2.putText(frame, "NO SIGNAL", (450, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         else:
-            current_time = time.time()
-            active_bboxes = []
-            if self.live_bboxes:
-                # --- [핵심 수정 2] Bbox를 그릴 때 저장된 색상값을 사용 ---
-                for bbox, expiration_time, color in self.live_bboxes:
-                    if current_time < expiration_time:
-                        active_bboxes.append((bbox, expiration_time, color))
-                        x1, y1 = int(bbox['x1']), int(bbox['y1'])
-                        x2, y2 = int(bbox['x2']), int(bbox['y2'])
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            self.live_bboxes = active_bboxes
-            
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
             cv2.putText(frame, now_str, (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.circle(frame, (30, 30), 10, (0, 0, 255), -1)
             cv2.putText(frame, "REC", (50, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             self.recorder.write_frame(frame)
-        
+            
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         qt_image = QImage(rgb_image.data, w, h, w * ch, QImage.Format.Format_RGB888)
@@ -338,8 +364,10 @@ class PatrolDashboard(QMainWindow, form_class):
         color = self.event_colors.get(event_type, "red")
         log_message = f" {event_type} detected (probability: {prob:.2f})"
         html_log = f"<font color='{color}'>{timestamp} - {log_message}</font>"
+        
         self.log_browser.append(html_log)
         self.log_entries.append({"timestamp": timestamp, "message": log_message})
+        
         if event_type in self.alert_sounds:
             dialog = AlertDialog(self, event_type, prob, timestamp)
             channel = pygame.mixer.find_channel(True)
@@ -347,10 +375,13 @@ class PatrolDashboard(QMainWindow, form_class):
                 sound = self.alert_sounds[event_type]
                 channel.play(sound, loops=-1)
                 dialog.alert_channel = channel
+            
             self.open_alerts.append(dialog)
             self._place_alert_dialog(dialog)
             dialog.show()
-            list_item = QListWidgetItem(f"[{event_type}] {timestamp}", self.alert_list_widget)
+
+            list_item_text = f"[{event_type}] {timestamp}"
+            list_item = QListWidgetItem(list_item_text, self.alert_list_widget)
             list_item.setData(Qt.ItemDataRole.UserRole, dialog)
     
     def _place_alert_dialog(self, dialog: QDialog):
@@ -358,8 +389,10 @@ class PatrolDashboard(QMainWindow, form_class):
         offset = QPoint(110, 100)
         per_row = 10
         row_offset = QPoint(-30, 60)
+        
         num = len(self.open_alerts) - 1
         row, col = num // per_row, num % per_row
+        
         new_pos = start_pos + (col * offset)
         new_pos.setX(new_pos.x() + (row * row_offset.x()))
         new_pos.setY(new_pos.y() + (row * row_offset.y()))
@@ -370,10 +403,13 @@ class PatrolDashboard(QMainWindow, form_class):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"<font color='green'>{timestamp} - {event_type} event resolved</font>"
         self.log_browser.append(log_message)
+        
         if hasattr(dialog_to_remove, 'alert_channel'):
             dialog_to_remove.alert_channel.stop()
+            
         if dialog_to_remove in self.open_alerts:
             self.open_alerts.remove(dialog_to_remove)
+
         for i in range(self.alert_list_widget.count()):
             item = self.alert_list_widget.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == dialog_to_remove:
@@ -385,6 +421,7 @@ class PatrolDashboard(QMainWindow, form_class):
         if not selected_item:
             QMessageBox.warning(self, "알림", "목록에서 확인할 알림을 먼저 선택하세요.")
             return
+        
         dialog = selected_item.data(Qt.ItemDataRole.UserRole)
         dialog.confirm_and_close()
 
@@ -395,7 +432,8 @@ class PatrolDashboard(QMainWindow, form_class):
 
     def send_stop_alarm_command(self, event_type: str):
         code = self.event_to_code_map.get(event_type)
-        if code is None: return
+        if code is None:
+            return
         payload = struct.pack('BBBB', 4, 2, 1, code)
         self.command_queue.put(payload)
         print(f"Queued stop alarm command for {event_type}: {payload.hex()}")
@@ -406,32 +444,18 @@ class PatrolDashboard(QMainWindow, form_class):
             self.log_viewer_dialog.show()
         self.log_viewer_dialog.activateWindow()
 
-    # --- [핵심 수정 3] Bbox에 색상 정보를 포함하고, 표시 시간을 3초로 변경 ---
     def process_tcp_data(self, data: dict):
         print("Processing TCP data:", data)
-        current_time = time.time()
-        new_bboxes = []
-        detection_data = data.get("detection", {})
-
-        for feature, results in detection_data.items():
-            # feature 이름(예: 'feat_detect_fire')으로 색상 가져오기
-            color = self.feature_to_color_map.get(feature, (0, 0, 255)) # 기본값 빨간색
+        detection_features = data.get("detection", {})
+        for feature, results in detection_features.items():
+            if not isinstance(results, list) or not results:
+                continue
             
-            if not isinstance(results, list): continue
-            
-            obj_list = [item for item in results if isinstance(item, dict) and 'bbox' in item]
-            for item in obj_list:
-                # (bbox, 만료시간, 색상) 튜플로 저장, 시간은 3초로 변경
-                new_bboxes.append((item['bbox'], current_time + 3.0, color))
-        
-        if new_bboxes:
-            self.live_bboxes.extend(new_bboxes)
-
-        # 기존 이벤트 알림 처리 로직
-        for feature, results in detection_data.items():
-            if not isinstance(results, list) or not results: continue
             obj_list = results[:-1] if isinstance(results[-1], dict) and "detection_count" in results[-1] else results
-            if not obj_list: continue
+            if not obj_list:
+                continue
+
+            # [수정] 'feat_detect_smoke'가 더 이상 별도 이벤트가 아니므로 핸들러에서 제거
             handlers = {
                 "feat_detect_fire": lambda: self.handle_fire_event(obj_list),
                 "feat_detect_fall": lambda: self.handle_generic_event(obj_list, "쓰러진 사람", "score_event"),
@@ -442,26 +466,35 @@ class PatrolDashboard(QMainWindow, form_class):
             if feature in handlers:
                 handlers[feature]()
 
+    # [수정] handle_fire_and_smoke_event 함수의 이름을 바꾸고 로직을 통합
     def handle_fire_event(self, results: list):
+        """'feat_detect_fire' 결과를 분석하여 화재 이벤트를 발생시킵니다. (연기 포함)"""
         for item in results:
-            if item.get("confidence", 0.0) > EVENT_PROB_THRESHOLD:
-                self.trigger_event("화재", item.get("confidence", 0.0))
+            confidence = item.get("confidence", 0.0)
+            if confidence > EVENT_PROB_THRESHOLD:
+                # class_name이 무엇이든(연기, 불꽃 등) '화재'로 간주하고 이벤트 발생
+                self.trigger_event("화재", confidence)
 
     def handle_generic_event(self, results: list, event_name: str, conf_key: str, target_class: str = None):
         for item in results:
-            if target_class and item.get("class_name") != target_class: continue
-            if item.get(conf_key, 0.0) > EVENT_PROB_THRESHOLD:
-                self.trigger_event(event_name, item.get(conf_key, 0.0))
+            if target_class and item.get("class_name") != target_class:
+                continue
+            confidence = item.get(conf_key, 0.0)
+            if confidence > EVENT_PROB_THRESHOLD:
+                self.trigger_event(event_name, confidence)
 
     def handle_violence_event(self, results: list):
         for item in results:
-            if item.get("class_name") == "Fight" and item.get("confidence", 0.0) > EVENT_PROB_THRESHOLD:
-                self.trigger_event("폭행", item.get("confidence", 0.0))
+            if item.get("class_name") == "Fight":
+                confidence = item.get("confidence", 0.0)
+                if confidence > EVENT_PROB_THRESHOLD:
+                    self.trigger_event("폭행", confidence)
 
     def handle_missing_person_event(self, results: list):
         for item in results:
-            if item.get("confidence", 0.0) > EVENT_PROB_THRESHOLD:
-                self.trigger_event("실종자 발견", item.get("confidence", 0.0))
+            confidence = item.get("confidence", 0.0)
+            if confidence > EVENT_PROB_THRESHOLD:
+                self.trigger_event("실종자 발견", confidence)
 
     def handle_trash_event(self, results: list):
         class_names = {item.get("class_name") for item in results}
@@ -474,9 +507,11 @@ class PatrolDashboard(QMainWindow, form_class):
         print("Closing application...")
         self.video_thread.stop()
         self.tcp_receiver.stop()
+        
         for widget in QApplication.instance().topLevelWidgets():
             if isinstance(widget, QDialog):
                 widget.close()
+        
         self.tcp_receiver.wait(1000)
         self.recorder.stop()
         pygame.mixer.quit()

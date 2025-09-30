@@ -12,7 +12,7 @@ from situationDetector.server.tcp_gui_server import gui_server_run
 from situationDetector.server.tcp_ds_server import ds_server_run
 
 from situationDetector.detect.detect_fire import run_fire_detect
-from situationDetector.detect.find_missing import run_find_missing
+# from situationDetector.detect.find_missing import run_find_missing
 from situationDetector.detect.detect_fall import run_fall_detect
 from situationDetector.detect.detect_smoke import run_smoke_detect
 

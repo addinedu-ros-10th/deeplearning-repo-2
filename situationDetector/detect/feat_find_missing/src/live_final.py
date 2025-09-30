@@ -139,10 +139,10 @@ def infer_once(frame: np.ndarray) -> list[dict]:
                 "bbox": [int(x1), int(y1), int(x2), int(y2)] # ★★★ 수정된 부분 ★★★
             })
             
-            # (시각화)
-            label = f"{name} ({best_sim:.2f})/{match_type}"
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 220, 0), 2)
-            cv2.putText(frame, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 220, 0), 2)
+            # # (시각화)
+            # label = f"{name} ({best_sim:.2f})/{match_type}"
+            # cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 220, 0), 2)
+            # cv2.putText(frame, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 220, 0), 2)
 
     return results
 

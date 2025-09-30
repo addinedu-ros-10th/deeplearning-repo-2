@@ -1,4 +1,4 @@
-# server.py
+# server.py (최종 수정본)
 
 import socket
 import json
@@ -50,6 +50,7 @@ def save_to_db(detection_data, video_path=None, mime_type=None):
     conn = get_db_connection()
     if not detection_data.get("event_video_meta"):
         print("[Patrol Server] 경고: 'event_video_meta' 데이터가 비어있어 DB 저장을 건너뜁니다.")
+        conn.close()
         return
 
     try:
@@ -59,7 +60,6 @@ def save_to_db(detection_data, video_path=None, mime_type=None):
             ts = detection_data.get("timestamp")
             patrol_number = f"Patrol_number_{detection_data.get('patrol_number', 0)}"
             detection_key = next(iter(detection_data["event_video_meta"]))
-            # raw_result를 JSON 문자열로 저장
             raw_result_str = json.dumps(detection_data)
             cursor.execute(sql_situation, (ts, patrol_number, detection_key, raw_result_str))
             class_id = cursor.lastrowid
@@ -67,13 +67,13 @@ def save_to_db(detection_data, video_path=None, mime_type=None):
             # 2. media 테이블 저장 (영상이 있는 경우)
             if video_path:
                 sql_media = "INSERT INTO media (class_id, rel_path, validation, mime_type) VALUES (%s, %s, %s, %s)"
-                # video_path에서 MEDIA_STORAGE_ROOT를 제외한 상대 경로를 저장
                 rel_path = os.path.relpath(video_path, config.MEDIA_STORAGE_ROOT)
                 cursor.execute(sql_media, (class_id, rel_path, True, mime_type))
         conn.commit()
         print(f"[Patrol Server] DB 저장 성공. Class ID: {class_id}")
     except Exception as e:
         print(f"[Patrol Server] DB 저장 실패: {e}")
+        conn.rollback()
     finally:
         conn.close()
 
@@ -91,16 +91,15 @@ def handle_patrol_client(conn, addr):
         while True:
             data = conn.recv(4096)
             if not data:
-                break
+                break # 클라이언트가 연결을 끊으면 루프 종료
             
             buffer += data
             
-            # 버퍼에 있는 모든 JSON 객체를 처리
             while True:
                 try:
                     json_str = buffer.decode('utf-8')
                     json_obj, idx = json.JSONDecoder().raw_decode(json_str)
-                    buffer = buffer[idx:] # 처리된 JSON 만큼 버퍼에서 제거
+                    buffer = buffer[idx:]
 
                     if "event_video_meta" in json_obj:
                         detection_data = json_obj
@@ -124,8 +123,10 @@ def handle_patrol_client(conn, addr):
                                 print(f"[Patrol Server] 영상 저장 완료: {video_path}")
                                 if detection_data:
                                     save_to_db(detection_data, video_path=video_path, mime_type="video/mp4")
-                                video_file, detection_data, video_path = None, None, None # 초기화
-                            return # 클라이언트와의 통신 종료
+                                video_file, detection_data, video_path = None, None, None # 상태 초기화
+                            
+                            # [핵심 수정] return 대신 continue를 사용하여 연결을 유지하고 다음 데이터를 기다림
+                            continue
                         else:
                             if video_path and not video_file:
                                 video_file = open(video_path, "wb")
@@ -134,19 +135,18 @@ def handle_patrol_client(conn, addr):
                                 video_file.write(decoded_chunk)
 
                 except (json.JSONDecodeError, IndexError):
-                    break # 버퍼에 완전한 JSON이 없으면 대기
+                    break
 
     finally:
         if video_file and not video_file.closed:
             video_file.close()
-        # 영상 없이 메타데이터만 있는 경우도 저장
-        if detection_data and not video_path:
-            save_to_db(detection_data)
+        # 연결이 완전히 종료되기 전에 처리 못한 데이터가 있으면 저장
+        if detection_data:
+            save_to_db(detection_data, video_path=video_path, mime_type="video/mp4" if video_path else None)
         print(f"[Patrol Server] 순찰차 연결 종료: {addr}")
         conn.close()
 
 def start_patrol_server():
-    """순찰차로부터 이벤트와 영상을 수신하는 서버 시작"""
     host, port = "0.0.0.0", config.PATROL_CAR_SERVER_PORT
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((host, port))
@@ -154,7 +154,6 @@ def start_patrol_server():
         print(f"[INFO] 순찰차 데이터 수신 서버 시작 (Port: {port})")
         while True:
             conn, addr = server_socket.accept()
-            # 각 클라이언트를 별도의 스레드에서 처리하여 동시 접속 지원
             client_thread = threading.Thread(target=handle_patrol_client, args=(conn, addr))
             client_thread.start()
 
@@ -165,8 +164,7 @@ def handle_gui_client(conn, addr):
     print(f"[GUI Server] GUI 연결됨: {addr}")
     try:
         request = recv_msg(conn)
-        if not request:
-            return
+        if not request: return
 
         command = request.get('command')
         params = request.get('params')
@@ -176,7 +174,6 @@ def handle_gui_client(conn, addr):
             db_conn = get_db_connection()
             try:
                 with db_conn.cursor() as cursor:
-                    # 동적 쿼리 생성
                     query = "SELECT class_id, timestamp, class_name, raw_result FROM situation WHERE timestamp BETWEEN %s AND %s"
                     args = [params['start_date'], params['end_date'] + ' 23:59:59']
                     
@@ -202,8 +199,7 @@ def handle_gui_client(conn, addr):
                     result = cursor.fetchone()
                 
                 if result and result.get('rel_path'):
-                    # 상대 경로와 루트 경로를 조합하여 절대 경로 생성
-                    rel_path = result['rel_path'].lstrip('./') # 맨 앞 './' 제거
+                    rel_path = result['rel_path'].lstrip('./')
                     abs_path = os.path.join(config.MEDIA_STORAGE_ROOT, rel_path)
                     
                     if os.path.exists(abs_path):
@@ -213,7 +209,7 @@ def handle_gui_client(conn, addr):
                                 chunk = f.read(4096)
                                 if not chunk: break
                                 conn.sendall(chunk)
-                        conn.sendall(b'DONE') # 스트리밍 종료 신호
+                        conn.sendall(b'DONE')
                         print(f"[GUI Server] 영상 전송 완료: {abs_path}")
                     else:
                         send_msg(conn, {'error': f'파일을 찾을 수 없습니다: {abs_path}'})
@@ -229,7 +225,6 @@ def handle_gui_client(conn, addr):
         conn.close()
 
 def start_gui_server():
-    """GUI로부터 로그 및 영상 요청을 처리하는 서버 시작"""
     host, port = "0.0.0.0", config.GUI_SERVER_PORT
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((host, port))
@@ -244,15 +239,11 @@ def start_gui_server():
 # MAIN: 두 서버를 별도의 스레드에서 실행
 # ==============================================================================
 if __name__ == "__main__":
-    # 1번 직원: 순찰차 서버 담당
     patrol_thread = threading.Thread(target=start_patrol_server)
-    # 2번 직원: GUI 서버 담당
     gui_thread = threading.Thread(target=start_gui_server)
 
-    # 두 직원 모두 일 시작!
     patrol_thread.start()
     gui_thread.start()
 
-    # 메인 프로그램은 직원들이 퇴근할 때까지 기다림
     patrol_thread.join()
     gui_thread.join()
