@@ -92,7 +92,8 @@ def _handle_send(sock: socket.socket,
                     }
                     print(video_data)
 
-                    video_data_string = json.dumps(video_data) # json -> str
+                    # JSON Lines (JSONL) 방식
+                    video_data_string = json.dumps(video_data) # + '\n' # json -> str
                     sock.send(video_data_string.encode('utf-8'))
                     bytes_send += len(chunk)
 
