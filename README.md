@@ -32,9 +32,20 @@ AI 기반 시스템이 특정 환경(주간, 야간, 다양한 기상 조건)에
 ***
 
 ## 2.시스템 아키텍쳐
+<details>
+  <summary><span style="color:blue; text-decoration:underline; cursor:pointer;">HW_Architecture</span></summary>
+  <p align="center">
+    <img width="600" src="https://github.com/user-attachments/assets/ae5db6d8-959a-46bc-8638-1745565d26ca" />
+  </p>
+</details>
 
-### [HW_Architecture](https://github.com/user-attachments/assets/ae5db6d8-959a-46bc-8638-1745565d26ca)  
-### [SW_Architecture](https://github.com/user-attachments/assets/a89ce0e3-d57c-4bf3-b77c-8b2300b57b5f)
+<details>
+  <summary><span style="color:blue; text-decoration:underline; cursor:pointer;">SW_Architecture</span></summary>
+  <p align="center">
+    <img width="600" src="https://github.com/user-attachments/assets/a89ce0e3-d57c-4bf3-b77c-8b2300b57b5f" />
+  </p>
+</details>
+
 
 ***
 
