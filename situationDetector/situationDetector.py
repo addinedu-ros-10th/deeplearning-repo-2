@@ -49,13 +49,18 @@ class SituationDetector:
     # 1. 프레임을 소비하는 스레드 초기화
     self.ANALYZER_CONFIG = [
         # 분석 모델 스레드 (6가지)
-        # {"name" : "feat_detect_missing_person", "target" : run_find_missing}, # (비디오 전송 완료, bbox 필요)
-        # {"name" : "feat_detect_fall", "target" : run_fall_detect}, # ()
-        {"name" : "feat_detect_fire", "target" : run_fire_detect}, # (완료)
-        # {"name" : "feat_detect_smoke", "target" : run_smoke_detect}, # (통합은 30%나 50%)
+        # {"name" : "feat_detect_missing_person", "target" : run_find_missing}, # (완료)
         
-        # {"name" : "feat_detect_trash", "target" : run_trash_detect}, #
-        # {"name" : "feat_detect_violence", "target" : run_violence_detect}, # ()
+        # 
+        # {"name" : "feat_detect_fall", "target" : run_fall_detect}, # (GUI 방송 기능만 되면 완료)
+        # {"name" : "feat_detect_fire", "target" : run_fire_detect}, # (완료)
+
+        # deviceManager 방송 기능만 되면 완료
+        {"name" : "feat_detect_smoke", "target" : run_smoke_detect}, # (GUI 방송 기능만 되면 완료)
+        
+        
+        # {"name" : "feat_detect_trash", "target" : run_trash_detect}, # ()
+        # {"name" : "feat_detect_violence", "target" : run_violence_detect}, # (GUI)
     ]
     
     # 2. 최종 분석 결과를 받는 클라이언트 목록
@@ -70,8 +75,8 @@ class SituationDetector:
         "feat_detect_fire": 0x01,
         "feat_detect_violence": 0x02,
         "feat_detect_missing_person": 0x03,
-        # "feat_detect_smoke": 0x04,
-        # "feat_detect_trash": 0x05,
+        "feat_detect_smoke": 0x04,
+        "feat_detect_trash": 0x05,
     }
     
     self.NUM_ANALYZERS = len(self.ANALYZER_CONFIG)
