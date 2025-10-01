@@ -15,7 +15,7 @@
 ## 1.프로젝트 개요
 
 <p align="center">
-  <img width="546" height="594" src="https://github.com/user-attachments/assets/6ebb8d39-b54d-4081-947b-e77642d563df" />
+  <img width="351" height="379" src="https://github.com/user-attachments/assets/f1b22e6b-c014-4598-a939-6db46ee2cf55" />
 </p>
 
 ### 시스템 목적
