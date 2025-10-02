@@ -73,7 +73,7 @@ def _handle_send(sock: socket.socket,
                 video_ai_json_bytes = json.dumps(video_ai_json).encode('utf-8')
                 sock.send(video_ai_json_bytes)
                 
-                time.sleep(1)
+                time.sleep(0.1)
                 
                 print(video_ai_json_bytes)
 

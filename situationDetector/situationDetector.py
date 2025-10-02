@@ -12,7 +12,7 @@ from situationDetector.server.tcp_gui_server import gui_server_run
 from situationDetector.server.tcp_ds_server import ds_server_run
 
 from situationDetector.detect.detect_fire import run_fire_detect
-# from situationDetector.detect.find_missing import run_find_missing
+from situationDetector.detect.find_missing import run_find_missing
 from situationDetector.detect.detect_fall import run_fall_detect
 from situationDetector.detect.detect_smoke import run_smoke_detect
 
@@ -49,13 +49,13 @@ class SituationDetector:
     # 1. 프레임을 소비하는 스레드 초기화
     self.ANALYZER_CONFIG = [
         # 분석 모델 스레드 (6가지)
-        # {"name" : "feat_detect_missing_person", "target" : run_find_missing}, # (완료)
+        {"name" : "feat_detect_missing_person", "target" : run_find_missing}, # (완료)
         
         # 
-        # {"name" : "feat_detect_fall", "target" : run_fall_detect}, # (GUI 방송 기능만 되면 완료)
-        # {"name" : "feat_detect_fire", "target" : run_fire_detect}, # (완료)
+        {"name" : "feat_detect_fall", "target" : run_fall_detect}, # (GUI 방송 기능만 되면 완료)
+        {"name" : "feat_detect_fire", "target" : run_fire_detect}, # (완료)
 
-        # deviceManager 방송 기능만 되면 완료
+        # deviceManager 방송 기능만 되면 완료ㅊ
         {"name" : "feat_detect_smoke", "target" : run_smoke_detect}, # (GUI 방송 기능만 되면 완료)
         
         
@@ -190,7 +190,7 @@ class SituationDetector:
       try:
         # 이번 처리 주기에서 GUI 해제 이벤트가 수신되었는지 확인하기 위한 플래그
           # True일 경우에 감지된 객체가 0개인 경우에도 dM으로 보내는 이벤트 해제 신호를 생성하도록 함
-        clear_event_received_this_cycle = False
+        # clear_event_received_this_cycle = False
         
         # [1. 알람 해제 기능] 이벤트 해제 큐 확인
         try:
@@ -203,7 +203,7 @@ class SituationDetector:
             # 현재 시간 + 30초로 무시 종료 시간 설정
             self.ignore_events[alarm_type_to_clear] = current_time + 30.1
             # 해제 이벤트가 수신되었음을 플래그에 표시
-            clear_event_received_this_cycle = True
+            # clear_event_received_this_cycle = True
         except queue.Empty:
             pass # 처리할 해제 요청 없음
 
@@ -293,9 +293,10 @@ class SituationDetector:
           # self.final_output_queue.put(agg_json_data)          # DeviceManager 전용 이벤트 큐
           # 조건 1: 감지된 이벤트가 있을 때 (final_detections가 비어있지 않음)
           # 조건 2: 이번 주기에 GUI 해제 신호를 받았을 때 (clear_event_received_this_cycle이 True)
-          if final_detections or clear_event_received_this_cycle: # final_detections 딕셔너리가 비어있지 않을 때만 True
-            self.final_output_queue.put(agg_json_data)
-            print(f"DEBUG [Aggregator]: Event detected! Sending to dM queue. Data: {agg_json_data}")
+          self.final_output_queue.put(agg_json_data)
+
+          # if final_detections or clear_event_received_this_cycle: # final_detections 딕셔너리가 비어있지 않을 때만 True
+          #   print(f"DEBUG [Aggregator]: Event detected! Sending to dM queue. Data: {agg_json_data}")
 
           
           # analyzer_input_queue에 프레임 저장
@@ -472,6 +473,4 @@ class SituationDetector:
 if __name__ == "__main__":
   sd = SituationDetector()
   sd.run()
-
-
 

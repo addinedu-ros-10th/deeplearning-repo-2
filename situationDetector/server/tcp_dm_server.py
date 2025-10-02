@@ -180,8 +180,8 @@ def _handle_send(conn: socket.socket,
                 
                 data_packet = struct.pack('>BBBB', SOURCE, DESTINATION, patrol_number, alarm_type)
                 
-                print(data_packet)
-                print(event)
+                # print(data_packet)
+                # print(event)
 
                 conn.send(data_packet)
                 # print(f"situationDetector (TCP dM Communicator) : [{addr}] 테스트 데이터 전송 완료 ({len(TEST_DATA_FIRE)} bytes)")
