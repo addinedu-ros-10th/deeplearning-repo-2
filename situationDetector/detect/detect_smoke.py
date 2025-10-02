@@ -94,15 +94,16 @@ def run_smoke_detect(
         det_list = []
         if model is not None:
             try:
-                res = model(frame, verbose=False, conf=0.85)[0]
+                res = model(frame, verbose=False, conf=0.7)[0]
                 if getattr(res, "boxes", None) is not None and len(res.boxes) > 0:
                     for b in res.boxes.data.tolist():  # x1,y1,x2,y2,conf,cls
                         x1, y1, x2, y2, conf, cls = b
-                        det_list.append(
-                            _build_detection_item(
-                                cls_id=int(cls), conf=conf,
-                                x1=x1, y1=y1, x2=x2, y2=y2
-                            )
+                        if int(cls) != 0: # not_smoke = 0, smoke = 1
+                            det_list.append(
+                                _build_detection_item(
+                                    cls_id=int(cls), conf=conf,
+                                    x1=x1, y1=y1, x2=x2, y2=y2
+                                )
                         )
             except Exception as e:
                 print(f"feat_detect_smoke : inference error -> {e}")
@@ -118,9 +119,9 @@ def run_smoke_detect(
             "patrol_number": patrol_no,
         }
 
-        # 테스트 출력 코드
-        if len(det_list) != 0:
-            print(result_package)
+        # # 테스트 출력 코드
+        # if len(det_list) != 0:
+        #     print(result_package)
 
         try:
             aggregation_queue.put(result_package, timeout=0.1)

@@ -4,7 +4,7 @@ import time
 import queue
 import threading
 # from src
-from .feat_find_missing.src.live_final import infer_once
+from situationDetector.detect.live_final import infer_once
 
 def run_find_missing(analysis_frame_queue: queue.Queue, 
                     aggregation_queue :queue.Queue,     # 취합 큐
@@ -39,10 +39,10 @@ def run_find_missing(analysis_frame_queue: queue.Queue,
           "class_name": "detect_missing_person",
           "confidence" : missing['confidence'],
           "bbox" : {
-            missing['bbox'][0],
-            missing['bbox'][1],
-            missing['bbox'][2],
-            missing['bbox'][3],
+            "x1" : missing['bbox'][0],
+            "y1" : missing['bbox'][1],
+            "x2" : missing['bbox'][2],
+            "y2" : missing['bbox'][3],
           },
           "person_info" : {
             "name" : missing['name'],

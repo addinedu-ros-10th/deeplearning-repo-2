@@ -85,7 +85,7 @@ def run_fall_detect(
         det_list = []
         if model is not None:
             try:
-                res = model(frame, verbose=False, conf=0.9)[0]
+                res = model(frame, verbose=False, conf=0.93)[0]
                 if getattr(res, "boxes", None) is not None and len(res.boxes) > 0:
                     for b in res.boxes.data.tolist():  # x1,y1,x2,y2,conf,cls
                         x1, y1, x2, y2, conf, cls = b
