@@ -66,7 +66,13 @@ YOLOv8 Nano, (640x640, 70 epochs, batch 16)
 
 ### 5.무단투기자 식별
 * 영상내의 무단투기 행위에 대한 정확성을 수치로 인식합니다 (0~1)
-<img width="991" height="563" alt="image" src="https://github.com/user-attachments/assets/3b7c6519-7e44-457f-9d2c-0e1915c06530" />
+<details>
+  <summary><span style="color:blue; text-decoration:underline; cursor:pointer;">동영상 재생</span></summary>
+  <p align="center">
+    <img width="991" height="563" alt="image" src="https://github.com/user-attachments/assets/3b7c6519-7e44-457f-9d2c-0e1915c06530" />
+  </p>
+</details>
+
 * I3D (Slow_r50) (224x224, 17 epochs, batch size 2, clip length 8)
 
 ### 6.실신자 식별
