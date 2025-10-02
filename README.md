@@ -7,7 +7,7 @@
 * 2.[시스템 아키텍쳐](#시스템-아키텍쳐)
 * 3.[AI 모델 개발](#AI-모델-개발)
 * 4.[성능 평가 및 결과](#성능-평가-및-결과)
-* 5.[결론 및 향후 계획](#결론-및-향후-계획)
+* 5.[결론](#결론)
 * 6.[향후 계획](#향후-계획)
 
 ***
@@ -46,20 +46,37 @@ AI 기반 시스템이 특정 환경(주간, 야간, 다양한 기상 조건)에
   </p>
 </details>
 
+<img width="991" height="563" alt="image" src="https://github.com/user-attachments/assets/3b7c6519-7e44-457f-9d2c-0e1915c06530" />
+
+## 3.GUI 구현
+
+
 
 ***
 
-## 3.AI 모델 개발
+## 4.AI 모델 개발
+
+### 1.화재 감지
+YOLOv8 Nano (640x640, 3 epoch, bachsize 16)
+### 2.폭행 감지
+
+### 3.실종자 확인
+
+### 4.흡연자 감지
+YOLOv8 Nano, (640x640, 70 epochs, batch 16)
+
+### 5.무단투기자 식별
+* 영상내의 무단투기 행위에 대한 정확성을 수치로 인식합니다 (0~1)
+<p align="center">
+  <img width="600" src="  https://drive.google.com/file/d/1hZldRzCdQJ4kxARSFdek8sjoseQrg72S/view?usp=drive_link" />
+</p>
+* I3D (Slow_r50) (224x224, 17 epochs, batch size 2, clip length 8)
+
+### 6.실신자 식별
 
 ***
 
-## 4.성능 평가 및 결과
 
-***
+## 5.성능 평가 및 결과
 
-## 5.결론 및 향후 계획
-
-***
-
-## 6.향후 계획
 
