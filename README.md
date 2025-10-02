@@ -46,7 +46,6 @@ AI 기반 시스템이 특정 환경(주간, 야간, 다양한 기상 조건)에
   </p>
 </details>
 
-<img width="991" height="563" alt="image" src="https://github.com/user-attachments/assets/3b7c6519-7e44-457f-9d2c-0e1915c06530" />
 
 ## 3.GUI 구현
 
@@ -67,9 +66,7 @@ YOLOv8 Nano, (640x640, 70 epochs, batch 16)
 
 ### 5.무단투기자 식별
 * 영상내의 무단투기 행위에 대한 정확성을 수치로 인식합니다 (0~1)
-<p align="center">
-  <img width="600" src="  https://drive.google.com/file/d/1hZldRzCdQJ4kxARSFdek8sjoseQrg72S/view?usp=drive_link" />
-</p>
+<img width="991" height="563" alt="image" src="https://github.com/user-attachments/assets/3b7c6519-7e44-457f-9d2c-0e1915c06530" />
 * I3D (Slow_r50) (224x224, 17 epochs, batch size 2, clip length 8)
 
 ### 6.실신자 식별
