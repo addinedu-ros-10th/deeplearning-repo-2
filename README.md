@@ -19,28 +19,28 @@
   </a>
 </p>
   
-## 📖 목차
+# 📖 목차
 
-* 1.[프로젝트 개요](#프로젝트-개요)
-* 2.[시스템 아키텍쳐](#시스템-아키텍쳐)
-* 3.[AI 모델 개발](#AI-모델-개발)
-* 4.[성능 평가 및 결과](#성능-평가-및-결과)
-* 5.[결론](#결론)
-* 6.[향후 계획](#향후-계획)
+* [1. 프로젝트 개요](#1-프로젝트-개요)
+* [2. 주요 기능](#2-주요-기능)
+* [3. 핵심 기술](#3-핵심-기술)
+* [4. 시스템 설계](#4-시스템-설계)
+* [5. 프로젝트 구조](#5-프로젝트-구조)
+* [6. 결론](#6-결론)
 
 ***
 
-## 1. 프로젝트 개요
+# 1. 프로젝트 개요
 
-### 프로젝트 소개
+## 프로젝트 소개
 
 
 'AURA'는 Autonomous Urban Risk Analyzer의 약어로, 자율주행 순찰차의 실시간 상황 인식 및 대응으로 **순찰 효율성**과 **대응 신속성**을 높여 경찰의 순찰업무를 지원하는 시스템입니다.
 
-### 프로젝트 기간
+## 프로젝트 기간
  - 2025년 09월 02일 ~ 2025월 10월 02월
 
-### 기술 스택 
+## 기술 스택 
 
 | 분류 | 사용 기술 |
 | :--- | :--- |
@@ -49,7 +49,7 @@
 | **GUI & Database** | ![PyQt5](https://img.shields.io/badge/PyQt5-41CD52?style=for-the-badge&logo=qt&logoColor=white) ![MySQL](https://img.shields.io/badge/MySQL-005C84?style=for-the-badge&logo=mysql&logoColor=white) 
 | **Collaboration** | ![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white) ![Jira](https://img.shields.io/badge/Jira-0052CC?style=for-the-badge&logo=jira&logoColor=white) ![Confluence](https://img.shields.io/badge/Confluence-172B4D?style=for-the-badge&logo=confluence&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white) |
 
-### 팀 구성
+## 팀 구성
 
 
 | 이름 | 역할 | 담당 업무 |
@@ -62,12 +62,12 @@
 | **최승혁** | 팀원 | 순찰 이벤트 검색 GUI 개발, 실종자 식별 AI 개발 |
 
 
-### 라이센스
+## 라이센스
 이 프로젝트는 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)에 따라 오픈소스로 제공됩니다.
 자세한 사항은 [`LICENSE`](./LICENSE) 파일을 참고해주세요.
 
 
-## 2. 주요 기능
+# 2. 주요 기능
 
 <table>
   <tr>
@@ -109,10 +109,10 @@
 </table>
 
 
-## 3. 핵심 기술
+# 3. 핵심 기술
 AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 
-### 각 이벤트 인식에 적합한 개별 상황인식 AI 운용
+## 각 이벤트 인식에 적합한 개별 상황인식 AI 운용
 
 <p align="center">
   <img width="" height="380" src="ASSET/AI_model.png" /><br>
@@ -121,7 +121,7 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 
  - 각 상황에 대한 정확한 인식을 위해 개별적인 AI를 운용하여 각 상황의 **인식 정확성**을 높였습니다.
 
-### 실시간 영상 송출 및 AI 메타 데이터 통신 이분화
+## 실시간 영상 송출 및 AI 메타 데이터 통신 이분화
 
 <p align="center">
   <img width="" height="380" src="ASSET/AI_Inde.gif" /><br>
@@ -130,7 +130,7 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 
  - 순찰차의 영상 통신과 AI 메타 데이터 통신의 이분화를 통해 관제의 **실시간성과 통신 효율성**을 높였습니다.
    
-## 4. 시스템 설계
+# 4. 시스템 설계
 
 <details>
   <summary><span style="cursor:pointer;">하드웨어 아키텍처</span></summary>
@@ -146,7 +146,7 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
   </p>
 </details>
 
-## 5. 프로젝트 구조
+# 5. 프로젝트 구조
 
 ```
 AURA/
@@ -199,9 +199,9 @@ AURA/
 ---
 
 
-## 5. 결론
+# 6. 결론
 
-### 개발 의의
+## 개발 의의
 
 <p align="center">
   AURA는 자율주행 순찰차를 통한 <b>도시 안전과 치안 유지</b>에 기여하고자 합니다.
