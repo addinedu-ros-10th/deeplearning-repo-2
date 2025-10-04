@@ -115,7 +115,7 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 ### 각 이벤트 인식에 적합한 개별 상황인식 AI 운용
 
 <p align="center">
-  <img width="" height="380" src="ASSET/AI_model.png" />
+  <img width="" height="380" src="ASSET/AI_model.png" /><br>
   <sub>각 상황 식별을 위한 AI 모델 종류</sub>
 </p>
 
@@ -124,8 +124,8 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 ### 실시간 영상 송출 및 AI 메타 데이터 통신 이분화
 
 <p align="center">
-  <img width="" height="380" src="ASSET/AI_Inde.gif" />
-  <sub>AI 모델의 독립적인 운용</sub>
+  <img width="" height="380" src="ASSET/AI_Inde.gif" /><br>
+  <sub>AI 기반 이벤트 식별 기능의 독립적인 운용</sub>
 </p>
 
  - 순찰차의 영상 통신과 AI 메타 데이터 통신의 이분화를 통해 관제의 **실시간성과 통신 효율성**을 높였습니다.
