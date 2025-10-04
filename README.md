@@ -8,6 +8,17 @@
   <strong>자율주행 순찰차를 위한 <br>AI 기반 상황 감지 및 대응 시스템</strong>
 </p>
 
+<p align="center">
+  <a href="https://www.apache.org/licenses/LICENSE-2.0">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge" alt="License">
+  </a>
+  <a href="https://docs.google.com/presentation/d/1OvluDI2SC733bY-mDKR4HCJCvMPAkhUB/edit?usp=sharing&ouid=103769023187000268570&rtpof=true&sd=true">
+    <img src="https://img.shields.io/badge/PRESENTATION-GoogleSlides-yellow?style=for-the-badge&logo=google-slides&logoColor=white" alt="발표자료">
+  </a>
+
+  </a>
+</p>
+  
 ## 📖 목차
 
 * 1.[프로젝트 개요](#프로젝트-개요)
@@ -58,48 +69,67 @@
 
 ## 2. 주요 기능
 
-### AI 기반 상황 인식
+<table>
+  <tr>
+    <th align="center" style="width:15%">주요 기능</th>
+    <th style="width:80%">설명</th>
+    <th style="width:35%">이미지</th>
+  </tr>
+  <tr>
+    <td><b>AI 기반 상황 인식 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ </b></td>
+    <td>
+        AURA는 6가지 주요 상황 발생 이벤트<br>(화재, 폭행, 실종자, 실신자, 흡연자, 실신자)를 <br/> AI 영상 인식 기능으로 신속하게 확인합니다.
+    </td>
+    <td align="center">
+        <img width="300" src="ASSET/Function.png" />
+    </td>
+  </tr>
+  <tr>
+    <td><b>시간 상황 대응 및 <br>알림 발생</b></td>
+    <td>
+  AURA는 발생된 이벤트를 사용자에 알려주고, <br/> 순찰차의 경고 방송을 통해 각 상황에 대응합니다.
+    </td>
+    <td align="center">
+      <img src="ASSET/Gui.gif" width="48%"/><br>
+      <img src="ASSET/PED.gif" width="48%"/>
+    </td>
+  </tr>
+  <tr>
+    <td><b>상황 기록 아카이빙 및 검색
+ </b></td>
+    <td>
+  AURA는 이전에 발생된 이벤트를 데이터베이스에 저장하고, <br/> 사용자는 이벤트 발생 기록과 캡처 영상을 확인할 수 있습니다.
+    </td>
+    <td align="center">
+      <img src="ASSET/log_search.gif" width="48%"/> <br>
+      <img src="ASSET/log_video.gif" width="48%"/>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  <img width="" height="380" src="ASSET/Function.png" />
-</p> 
-
-<p align="center">
-  AURA는 6가지 주요 상황 발생 이벤트(화재, 폭행, 실종자, 실신자, 흡연자, 실신자)를 <br/> AI 영상 인식 기능으로 신속하게 확인합니다.
-</p>
-
-### 실시간 상황 대응 및 알림 발생
-
-<p align="center">
-  <img width="" height="380" src="ASSET/UI.png" />
-</p> 
-
-
-<p align="center">
-  AURA는 발생된 이벤트에 대해 관제 시스템에 알림을 생성하고, <br/> 순찰차의 경고 방송을 통해 각 상황에 대응합니다.
-</p>
-
-### 상황 기록 아카이빙 및 검색
-
-<p align="center">
-  <img width="" height="380" src="ASSET/log.png" />
-</p> 
-
-
-<p align="center">
-  AURA는 이전에 발생된 이벤트를 데이터베이스에 저장하고, <br/> 관제시스템에서 이벤트 발생 기록과 발생 전후 15초에 대한 영상을 확인할 수 있습니다.
-</p>
 
 ## 3. 핵심 기술
 AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
 
 ### 각 이벤트 인식에 적합한 개별 상황인식 AI 운용
-각 상황에 대한 정확한 인식을 위해 개별적인 AI를 운용하여 각 상황의 인식 정확성을 높였습니다.
 
 <p align="center">
   <img width="" height="380" src="ASSET/AI_model.png" />
-</p> 
+  <sub>각 상황 식별을 위한 AI 모델 종류</sub>
+</p>
 
+ - 각 상황에 대한 정확한 인식을 위해 개별적인 AI를 운용하여 각 상황의 **인식 정확성**을 높였습니다.
+
+### 실시간 영상 송출 및 AI 메타 데이터 통신 이분화
+
+<p align="center">
+  <img width="" height="380" src="ASSET/AI_Inde.gif" />
+  <sub>AI 모델의 독립적인 운용</sub>
+</p>
+
+ - 순찰차의 영상 통신과 AI 메타 데이터 통신의 이분화를 통해 관제의 **실시간성과 통신 효율성**을 높였습니다.
+   
 ## 4. 시스템 설계
 
 <details>
@@ -116,40 +146,60 @@ AURA의 개발에 적용된 핵심 기술은 다음과 같습니다.
   </p>
 </details>
 
-## 5. 개발 결과 및 결론
+## 5. 프로젝트 구조
 
-### 구현 기능 시험
+```
+AURA/
+├── dataService/                        # 순찰 이벤트 메타데이터 및 캡처 영상 관리 모듈
+│   ├── server_config.py                # DB 접속 정보 및 통신 포트 관리
+│   └── server.py                       # dataService 메인 모듈
+│
+├── deviceManager/                      # 순찰 관제GUI
+│   ├── embedmediaStorage/              # 순찰 이벤트 방송 효과음
+│   ├── include/                  
+│   ├── lib/             
+│   ├── CMakeList.txt                   # deviceManager 컴파일 및 빌드 파일
+│   ├── deviceManager.bash              # deviceManager 실행 파일
+│   ├── TCPClientManager.cpp            # TCP 통신용 모듈
+│   └── deviceManager.cpp               # deviceManager 메인 모듈
+│
+├── monitoringGUI/                      # 순찰 관제GUI
+│   ├── alert/                          # 순찰 이벤트 알림 효과음
+│   ├── log_viewer.ui                  
+│   ├── main_dashboard.ui             
+│   ├── log_viewer.py                   # 순찰 이벤트 기록 검색 GUI
+│   └── main_dashboard.py               # monitoringGUI 메인 모듈
+│
+├── realtimeBroadcaster/                # 실시간 영상 송출 모듈
+│   ├── camerasetup.py                  # 카메라 연결 및 실행 모듈
+|   ├── realtimeBroadcaster.py          # realtimeBroadcaster 메인 모듈
+│   └── server.py                       # 송출용 서버 실행 모듈
+│
+├── situationDetector/                  # AI 동작 및 순찰 이벤트 송신 모듈
+│   ├── detect/                         # AI 모델 관리 폴더
+|       ├── feat_detect_fall/           # 실신자 식별 AI
+|       ├── feat_detect_fire/           # 화재 상황 식별 AI
+|       ├── feat_detect_smoke/          # 흡연자 식별 AI
+|       ├── feat_detect_trash/          # 쓰레기 무단 투기 식별 AI
+|       ├── feat_detect_violence/       # 폭령 상황 식별 AI
+|       └── feat_find_missing/          # 실종자 식별 AI
+|
+│   ├── receiver/                       # TCP 통신 클라이언트 모듈
+│   ├── server/                         # TCP 통신 서버 모듈           
+│   ├── situationDetector.py            # situationDetector 메인 모듈
+│   └── videoManager.py                 # 순찰 이벤트 영상 캡처 모듈
+│
+├── assets/                            # 이미지 및 리소스 파일
+│
+├── .gitignore
+├── README.md
+└── LICENSE
+```
 
-<table>
-  <tr>
-    <th style="width:15%">주요 기능</th>
-    <th style="width:50%">설명</th>
-    <th style="width:35%">이미지/GIF</th>
-  </tr>
-  <tr>
-    <td><b>실시간 상황 대응 및 알림 발생
- </b></td>
-    <td>
-      ▪ 식별된 상황에 대한 관제 알림 발생 <br>
-      ▪ 식별된 상황에 대한 순찰차 경고 방송 실행(gif 내 로그로 대체) <br>
-    </td>
-    <td align="center">
-      <img src="ASSET/Gui.gif" width="48%"/><br>
-      <img src="ASSET/PED.gif" width="48%"/>
-    </td>
-  </tr>
-  <tr>
-    <td><b>상황 기록 아카이빙 및 검색</b></td>
-    <td>
-      ▪ 순찰 이벤트 발생 데이터 및 영상 저장<br>
-      ▪ 관제 GUI에서 이전 이벤트 기록 검색 및 영상 확인
-    </td>
-    <td align="center">
-      <img src="ASSET/log_search.gif" width="48%"/> <br>
-      <img src="ASSET/log_video.gif" width="48%"/>
-    </td>
-  </tr>
-</table>
+---
+
+
+## 5. 결론
 
 ### 개발 의의
 
